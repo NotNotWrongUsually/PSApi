@@ -1,5 +1,5 @@
 #Requires -Version 6
-# Requires -RunAsAdministrator
+#Requires -RunAsAdministrator
 
 Set-Alias -Name 'pcm' -Value 'Publish-Command'
 Set-Alias -Name 'upcm' -Value 'Unpublish-Command'

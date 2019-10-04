@@ -81,8 +81,9 @@ IS IT SAFE?
     of scenarios like trying to inject code into strings with $(), semicolons,
     etc. have also been tested. Though nothing has been discovered so far, it is
     not adviced to expose any cmdlet to the Internet. Should you discover a way
-    to exploit this module please create a GitHub issue at <github url> so the
-    matter can be addressed appropriately!
+    to exploit this module please create an issue at
+    https://github.com/NotNotWrongUsually/PSApi so the matter can be addressed
+    appropriately!
     
     All of that being said:
     
