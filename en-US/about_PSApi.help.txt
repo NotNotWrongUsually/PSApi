@@ -2,17 +2,16 @@
     about_PSApi
 
 SHORT DESCRIPTION
-    Provides an overall description of the PublishCommand module, how to use it,
-    and some common quirks and gotchas in calling exposed commands from a
-    browser.
+    Provides an overall description of the PSApi module, how to use it, and some
+    common quirks and gotchas in calling exposed commands from a browser.
 
 LONG DESCRIPTION
-    The PublishCommand module takes a function from your current session and
-    publishes it as a webservice. The command used for this is Publish-Command.
-    Care has been taken to supply the command with sane defaults. Using these,
-    your command will be exposed at:
+    The PSApi module takes a function from your current session and publishes it
+    as a webservice. The command used for this is Publish-Command. Care has been
+    taken to supply the command with sane defaults. Using these, your command
+    will be exposed at:
 
-    http://localhost/PSApi/<your-command>
+    http://myhostname/PSApi/<your-command>
 
     Using the parameters for the command you can modify the path, port, logging
     location etc. Refer to the help on Publish-Command for more information
@@ -30,21 +29,21 @@ LONG DESCRIPTION
 
     Command: Get-Process -Name "notepad"
 
-    URL:     http://localhost/PSApi/Get-Process?name=notepad
+    URL:     http://myhostname/PSApi/Get-Process?name=notepad
 
     In some cases you may want to supply an array of strings. This can be done
     in the following way.
 
     Command: Get-Process -Name "notepad", "chrome"
 
-    URL:     http://localhost/PSApi/Get-Process?name=notepad&name=chrome
+    URL:     http://myhostname/PSApi/Get-Process?name=notepad&name=chrome
 
     Switch parameters are supplied in the following way (note the '=' sign after
     the parameter):
 
     Command: Get-Process -Name "notepad" -FileVersionInfo
 
-    URL:     http://localhost/PSApi/Get-Process?name=notepad&FileVersionInfo=
+    URL:     http://myhostname/PSApi/Get-Process?name=notepad&FileVersionInfo=
 
 RETURN TYPES
     If a published function emits certain outputs some special handling is
@@ -105,11 +104,11 @@ EXAMPLES
 
     Going to
     
-    http://localhost/PSApi/Get-HighCpuConsumers
+    http://myhostname/PSApi/Get-HighCpuConsumers
     
     or alternatively
 
-    http://localhost/PSApi/Get-HighCpuConsumers?number=<x>
+    http://myhostname/PSApi/Get-HighCpuConsumers?number=<x>
     
     Will display JSON with the relevant information for the machine.
 
@@ -121,7 +120,7 @@ EXAMPLES
     >>     New-Object System.Drawing.Bitmap -ArgumentList "C:\some_picture.jpg"
     >> }
 
-    Going to http://localhost/PSApi/Get-Image will display the picture.
+    Going to http://myhostname/PSApi/Get-Image will display the picture.
 
 
 SEE ALSO
