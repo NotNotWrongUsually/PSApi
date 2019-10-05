@@ -1,5 +1,4 @@
 #Requires -Version 6
-#Requires -RunAsAdministrator
 
 Set-Alias -Name 'pcm' -Value 'Publish-Command'
 Set-Alias -Name 'upcm' -Value 'Unpublish-Command'
@@ -21,7 +20,7 @@ function Publish-Command {
     Specifies the command to make available.
     
     .PARAMETER Hostname
-    Specifies the hostname which will serve the requests. This will default to the name of the machine the script is run from. Note that '+' and '*' can be used as well, but read the notes at https://docs.microsoft.com/en-us/dotnet/api/system.net.httplistener?view=netcore-2.2#remarks before you do this.
+    Specifies the hostname which will serve the requests. Defaults to '+'
     
     .PARAMETER Port
     Specifies the port the HttpListener will listen on.
@@ -58,17 +57,44 @@ function Publish-Command {
     General notes
     #>
     
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'Publish')]
     param (
-        [Parameter(Mandatory=$true)][string]$Command,
-        [string]$Hostname = $env:ComputerName,
-        [int]$Port = 80,
-        [string]$Path = "PSApi",
+        [Parameter(Mandatory = $true, ParameterSetName = 'Publish', Position = 0)]
+        [Parameter(Mandatory = $true, ParameterSetName = 'AddUrlAcl', Position = 0)]
+        [string]
+        $Command,
+        [Parameter(ParameterSetName = 'Publish')]
+        [Parameter(ParameterSetName = 'AddUrlAcl')]
+        [string]
+        $Hostname = '+',
+        [Parameter(ParameterSetName = 'Publish')]
+        [Parameter(ParameterSetName = 'AddUrlAcl')]
+        [int]
+        $Port = 80,
+        [Parameter(ParameterSetName = 'Publish')]
+        [Parameter(ParameterSetName = 'AddUrlAcl')]
+        [string]
+        $Path = "PSApi",
+        [Parameter(ParameterSetName = 'Publish')]
         [ValidateScript( { if ($_ -lt 2) { Throw "At least 2 threads are required for the server to run properly!" } })][int]$NumberOfThreads = 5,
-        [string]$LogLocation = (Get-Location).Path,
-        [switch]$Force = $false,
-        [string]$RunspaceDebugPreference = "SilentlyContinue"
+        [Parameter(ParameterSetName = 'Publish')]
+        [string]
+        $LogLocation = (Get-Location).Path,
+        [Parameter(ParameterSetName = 'Publish')]
+        [switch]
+        $Force = $false,
+        [Parameter(ParameterSetName = 'Publish')]
+        [string]
+        $RunspaceDebugPreference = "SilentlyContinue",
+        [Parameter(Mandatory = $true, ParameterSetName = 'AddUrlAcl')]
+        [switch]
+        $AddUrlAcl
     )
+
+    if ($AddUrlAcl) {
+        New-UrlAclReservation -Command $Command -Hostname $Hostname -Port $Port -Path $Path
+        break
+    }
 
     if ($Command -in (Get-PublishedCommand).Command) {
         if ($Force) {
@@ -79,6 +105,42 @@ function Publish-Command {
             break
         }
     }
+
+    $got_root = IsInSuperuserRole
+    $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
+
+    # OS specific handling is needed when attempting this command without Root/Administrator.
+    if ($got_root) {
+        # no worries, we can do everything.
+    }
+    else {
+        if ($IsWindows) {
+            if ((netsh http show urlacl $prefix_string) -match [regex]::Escape($prefix_string)) {
+                # The prefix_string already has a urlacl. No problems.
+            }
+            else {
+                Write-Warning ("Publishing a command on Windows requires Administrator rights!`n`n" + 
+                    "There are two ways to fix this:`n`n" +
+                    "#1: Running PowerShell as Administrator`n`n" +
+                    "#2: If you want to publish a command more permanently, it is advised to add a url reservation.`n" +
+                    "To do this run this command again, in an elevated shell, and include the -AddUrlAcl switch.`n" +
+                    "After this, you will be able to run the original command from a non-elevated shell.")
+                break
+            }
+        }
+        elseif ($IsLinux) {
+            if ($Port -gt 1023) {
+                # No problems, non-root users can do ports above 1023
+            }
+            else {
+                Write-Warning ("Publishing a command on Linux, with a port below 1024 requires superuser rights!`n`n" +
+                    "Either re-run this command in a PowerShell, running as a superuser, specify a port that is at least 1024," +
+                    " or grant an exemption via the OS.")
+                break
+            }
+        }
+    }
+        
 
     # log_writer is used from inside runspaces, so needs to be thread-safe
     $log_writer = [System.IO.TextWriter]::Synchronized((New-Object System.IO.StreamWriter -ArgumentList "$LogLocation\$Command`_access.log", $true))
@@ -92,7 +154,6 @@ function Publish-Command {
 
     $runspacepool = $dependencies | New-CustomRunspacePool -MaximumThreads $NumberOfThreads
     $listener = New-Object System.Net.HttpListener
-    $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $path + '/' + $Command + '/'
     $listener.Prefixes.Add($prefix_string)
     
     # Add listener to a table in the script scope to aid in making other functions for starting/stopping it, etc.
@@ -532,6 +593,43 @@ function Unpublish-Command {
         $c.RunspacePool.Close()
         $c.LogFile.Close()
         $listener_table.Remove($c)
+    }
+}
+
+
+function New-UrlAclReservation ($Hostname, $Port, $Path, $Command) {
+    if ($IsWindows) {
+        $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
+        netsh http add urlacl url=$prefix_string user=$($env:USERDOMAIN)\$($env:USERNAME)
+    }
+    else {
+        Write-Warning "The switch AddUrlAcl is only supported on Windows!"
+    }
+}
+
+
+function Remove-UrlAclReservation ($Hostname, $Port, $Path, $Command) {
+    if ($IsWindows) {
+        $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
+        netsh http delete urlacl url=$prefix_string
+    }
+    else {
+        Write-Warning "Only supported on Windows!"
+    }
+}
+
+
+function IsInSuperuserRole {
+    if ($IsWindows) {
+        $AdminRole = [Security.Principal.WindowsBuiltInRole]::Administrator
+        $CurrentRole = [Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
+        $CurrentRole.IsInRole($AdminRole)
+    }
+    elseif ($IsLinux) {
+        (id -u) -eq 0
+    }
+    else {
+        $false
     }
 }
 
