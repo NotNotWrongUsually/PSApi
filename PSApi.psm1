@@ -120,12 +120,12 @@ function Publish-Command {
                 # The prefix_string already has a urlacl. No problems.
             }
             else {
-                Write-Warning ("Publishing a command on Windows requires Administrator rights!`n`n" + 
+                Write-Warning ("`nPublishing a command on Windows requires Administrator rights!`n`n" + 
                     "There are two ways to fix this:`n`n" +
                     "#1: Running PowerShell as Administrator`n`n" +
                     "#2: If you want to publish a command more permanently, it is advised to add a url reservation.`n" +
                     "To do this run this command again, in an elevated shell, and include the -AddUrlAcl switch.`n" +
-                    "After this, you will be able to run the original command from a non-elevated shell.")
+                    "After this, you will be able to run the original command from a non-elevated shell.`n")
                 break
             }
         }
@@ -512,13 +512,13 @@ function New-CustomRunspacePool {
     )
 
     begin {
-        Write-Debug 'Starting'
+        Write-Debug 'Starting custom runspace pool creation'
 
-        Write-Debug 'Cloning host session state'
-        $session_state = $host.Runspace.InitialSessionState.clone()
+        # This loads in the powershell Microsoft.PowerShell.Core only. Ideally this would only happen if it was in
+        # required_entities, but it is needed since it seems impossible to load it in later (ImportPSSnapIn says it
+        # isn't installed!)
+        $session_state = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault2()
 
-        $module_path = Get-Module "Microsoft.PowerShell.Utility" | Select-Object -ExpandProperty Path
-        $session_state.ImportPSModule($module_path)
     }
 
     process {
