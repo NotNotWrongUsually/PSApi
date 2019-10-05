@@ -172,7 +172,6 @@ function Publish-Command {
         listener                = $listener
         RunspacePool            = $runspacepool
         task_list               = $task_list
-        host_proxy              = $Host
         log_writer              = $log_writer
         RunspaceDebugPreference = $RunspaceDebugPreference
     }
@@ -184,10 +183,9 @@ function Publish-Command {
 }
 
 
-function RequestRouter ($listener, $runspacepool, $task_list, $host_proxy, $log_writer, $RunSpaceDebugPreference) {
+function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $RunSpaceDebugPreference) {
 
     $DebugPreference = $RunSpaceDebugPreference
-    $Host = $host_proxy
     Write-Debug "REQUESTROUTER: Starting RequestRouter"
 
     # The command we want to run is resolved from the listener instead of the incoming url to prevent us from ever
@@ -205,7 +203,6 @@ function RequestRouter ($listener, $runspacepool, $task_list, $host_proxy, $log_
         $params = @{
             Context                 = $context
             Command                 = $Command
-            host_proxy              = $host_proxy
             log_writer              = $log_writer
             RunSpaceDebugPreference = $RunSpaceDebugPreference
         }
@@ -235,10 +232,9 @@ function RemoveCompletedTasks {
 
 
 # The RequestHandler is what does the actual work to evaluate the request and provide the users with a response
-function RequestHandler ($context, $Command, $host_proxy, $log_writer, $RunSpaceDebugPreference) {
+function RequestHandler ($context, $Command, $log_writer, $RunSpaceDebugPreference) {
     
     $DebugPreference = $RunSpaceDebugPreference
-    $Host = $host_proxy
     Write-Debug "REQUESTHANDLER: starting handling of incoming request"
 
     $request = $context.Request
