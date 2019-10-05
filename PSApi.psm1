@@ -91,8 +91,11 @@ function Publish-Command {
         $AddUrlAcl
     )
 
+    $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
+    $got_root = IsInSuperuserRole
+
     if ($AddUrlAcl) {
-        New-UrlAclReservation -Command $Command -Hostname $Hostname -Port $Port -Path $Path
+        New-UrlAclReservation $prefix_string
         break
     }
 
@@ -106,9 +109,7 @@ function Publish-Command {
         }
     }
 
-    $got_root = IsInSuperuserRole
-    $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
-
+    
     # OS specific handling is needed when attempting this command without Root/Administrator.
     if ($got_root) {
         # no worries, we can do everything.
@@ -596,10 +597,14 @@ function Unpublish-Command {
 }
 
 
-function New-UrlAclReservation ($Hostname, $Port, $Path, $Command) {
+function New-UrlAclReservation ($prefix_string) {
     if ($IsWindows) {
-        $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
         netsh http add urlacl url=$prefix_string user=$($env:USERDOMAIN)\$($env:USERNAME)
+
+        # Store the urlacl's created by this module so we can help clean them up later if need be
+        $storage_path = join-path (split-path (gcm publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
+        if (-not (Test-Path $storage_path)) {New-Item -Path $storage_path -Force | Out-Null}
+        Add-Content -Path $storage_path -Value $prefix_string
     }
     else {
         Write-Warning "The switch AddUrlAcl is only supported on Windows!"
@@ -607,10 +612,29 @@ function New-UrlAclReservation ($Hostname, $Port, $Path, $Command) {
 }
 
 
-function Remove-UrlAclReservation ($Hostname, $Port, $Path, $Command) {
+function Remove-PSApiUrlAclReservation ($prefix_string) {
     if ($IsWindows) {
-        $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
-        netsh http delete urlacl url=$prefix_string
+        if (IsInSuperuserRole) {
+            $storage_path = join-path (split-path (gcm publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
+            netsh http delete urlacl url=$prefix_string
+            get-content -Path $storage_path | select-string -pattern [regex]::Escape($prefix_string) -notmatch | Out-File $storage_path
+               
+        }
+        else {
+            Write-Warning "You need to be in an elevated shell to do this!"
+        }
+    }
+    else {
+        Write-Warning "Only supported on Windows!"
+    }
+}
+
+
+# Get prefixes this cmdlet has added
+function Get-PSApiUrlAclReservation {
+    if ($IsWindows) {
+    $storage_path = join-path (split-path (gcm publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
+    Get-Content -Path $storage_path
     }
     else {
         Write-Warning "Only supported on Windows!"
