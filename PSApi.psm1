@@ -268,15 +268,14 @@ function RequestHandler ($context, $Command, $host_proxy, $log_writer, $RunSpace
     }
     catch {
         Write-Debug "REQUESTHANDLER: request handling produced an error"
-        $e = $Error[0]
         $response.StatusCode = 500
         $response_data = "<html><head><title>Something bad happened :(</title></head>
                           <body><font face='Courier New'>
                           <h1 style='background-color: #000000; color: #800000'>HTTP 500 - Internal Server Error</h1>
                           <p><b>Command:</b><br>$Command</p>
-                          <p><b>Error message:</b><br>$($e.Exception.Message)</p>
-                          <p><b>Parameters:</b><br>$((($params | Out-String)  -replace "`r", "<br>") -replace " ", "&nbsp;")</p>                      
-                          <p><b>Category info:</b><br>$((($e.CategoryInfo | Out-String) -replace "`r", "<br>") -replace " ", "&nbsp;")</p>
+                          <p><b>Error message:</b><br>$($_.Exception.Message)</p>
+                          <p><b>Parameters:</b><br>$((($params | Out-String)  -replace "`n", "<br>") -replace " ", "&nbsp;")</p>                      
+                          <p><b>Category info:</b><br>$((($_.CategoryInfo | Out-String) -replace "`n", "<br>") -replace " ", "&nbsp;")</p>
                           </font></body>
                           </html>"
     }
@@ -602,7 +601,7 @@ function New-UrlAclReservation ($prefix_string) {
         netsh http add urlacl url=$prefix_string user=$($env:USERDOMAIN)\$($env:USERNAME)
 
         # Store the urlacl's created by this module so we can help clean them up later if need be
-        $storage_path = join-path (split-path (gcm publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
+        $storage_path = join-path (split-path (Get-Command publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
         if (-not (Test-Path $storage_path)) {New-Item -Path $storage_path -Force | Out-Null}
         Add-Content -Path $storage_path -Value $prefix_string
     }
@@ -615,7 +614,7 @@ function New-UrlAclReservation ($prefix_string) {
 function Remove-PSApiUrlAclReservation ($prefix_string) {
     if ($IsWindows) {
         if (IsInSuperuserRole) {
-            $storage_path = join-path (split-path (gcm publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
+            $storage_path = join-path (split-path (Get-Command Publish-Command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
             netsh http delete urlacl url=$prefix_string
             get-content -Path $storage_path | select-string -pattern [regex]::Escape($prefix_string) -notmatch | Out-File $storage_path
                
@@ -633,7 +632,7 @@ function Remove-PSApiUrlAclReservation ($prefix_string) {
 # Get prefixes this cmdlet has added
 function Get-PSApiUrlAclReservation {
     if ($IsWindows) {
-    $storage_path = join-path (split-path (gcm publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
+    $storage_path = join-path (split-path (Get-Command publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
     Get-Content -Path $storage_path
     }
     else {
