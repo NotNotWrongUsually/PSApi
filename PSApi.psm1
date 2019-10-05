@@ -79,7 +79,7 @@ function Publish-Command {
         [ValidateScript( { if ($_ -lt 2) { Throw "At least 2 threads are required for the server to run properly!" } })][int]$NumberOfThreads = 5,
         [Parameter(ParameterSetName = 'Publish')]
         [string]
-        $LogLocation = (Get-Location).Path,
+        $LogLocation = (Join-Path -Path (get-location).path -ChildPath "$Command`_access.log"),
         [Parameter(ParameterSetName = 'Publish')]
         [switch]
         $Force = $false,
@@ -134,16 +134,15 @@ function Publish-Command {
             }
             else {
                 Write-Warning ("Publishing a command on Linux, with a port below 1024 requires superuser rights!`n`n" +
-                    "Either re-run this command in a PowerShell, running as a superuser, specify a port that is at least 1024," +
+                    "Either re-run this command in a PowerShell running as a superuser, specify a port that is at least 1024," +
                     " or grant an exemption via the OS.")
                 break
             }
         }
-    }
-        
+    } 
 
     # log_writer is used from inside runspaces, so needs to be thread-safe
-    $log_writer = [System.IO.TextWriter]::Synchronized((New-Object System.IO.StreamWriter -ArgumentList "$LogLocation\$Command`_access.log", $true))
+    $log_writer = [System.IO.TextWriter]::Synchronized((New-Object System.IO.StreamWriter -ArgumentList $LogLocation, $true))
     $dependencies = @(Resolve-CommandDependencies $Command)
 
     # This module itself contains the handling functions, so will always be needed
