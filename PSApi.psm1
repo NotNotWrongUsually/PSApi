@@ -400,7 +400,6 @@ function InspectCommand ($name, $from_module = $null) {
             $check_command = get-alias | Where-Object { $_.Name -eq '?' }
         }
         else {
-
             try {
                 # Try finding the command in the module scope it was mentioned in
                 $check_command = (Get-Module $from_module).Invoke( { param([string]$name); get-command $name }, $name)
@@ -418,12 +417,15 @@ function InspectCommand ($name, $from_module = $null) {
                     # visible otherwise. We don't need to load these - the modules should take care of that
                     # themselves.
                     $skip_processing = $true
+                    Write-Debug "Unable to find $name"
                 }
             }
         }
     }
 
     if (-not $skip_processing) {
+        Write-Debug "CommandType is $($check_command.CommandType)"
+        Write-Debug "Source is $($check_command.Source)"
     
         switch ($check_command.CommandType) {
         
@@ -605,7 +607,7 @@ function New-UrlAclReservation ($prefix_string) {
 
         # Store the urlacl's created by this module so we can help clean them up later if need be
         $storage_path = join-path (split-path (Get-Command publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
-        if (-not (Test-Path $storage_path)) {New-Item -Path $storage_path -Force | Out-Null}
+        if (-not (Test-Path $storage_path)) { New-Item -Path $storage_path -Force | Out-Null }
         Add-Content -Path $storage_path -Value $prefix_string
     }
     else {
@@ -635,8 +637,8 @@ function Remove-PSApiUrlAclReservation ($prefix_string) {
 # Get prefixes this cmdlet has added
 function Get-PSApiUrlAclReservation {
     if ($IsWindows) {
-    $storage_path = join-path (split-path (Get-Command publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
-    Get-Content -Path $storage_path
+        $storage_path = join-path (split-path (Get-Command publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
+        Get-Content -Path $storage_path
     }
     else {
         Write-Warning "Only supported on Windows!"
