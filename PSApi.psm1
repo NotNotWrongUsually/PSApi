@@ -195,10 +195,17 @@ function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $RunS
     Write-Debug "REQUESTROUTER: Served command is $Command"
 
     while ($listener.IsListening) {
+        $finished = $false
         $incoming = $listener.GetContextAsync()
+
+        # A bug causes PowerShell to hang when exiting if a blocking command is running in a runspace.
+        # This should ideally be as simple as: $context = $incoming.GetAwaiter().GetResult()
+        while (-not $finished) {
+            $finished = $incoming.Wait(3000)
+        }
         $context = $incoming.Result
+
         Write-Debug "REQUESTROUTER: Incoming request received. Handing it over to RequestHandler"
-            
         # Send this request off for handling in a separate runspace.
         $params = @{
             Context                 = $context
