@@ -287,7 +287,7 @@ function RequestHandler ($context, $Command, $log_writer, $RunSpaceDebugPreferen
     Write-Debug "REQUESTHANDLER: starting inspection of content"
     switch ($response_data.GetType().Name) {
         'String' {
-            if (IsJson $resonse_data) {
+            if (IsJson $response_data) {
                 $response.ContentType = "application/json;charset=utf-8"
                 $response.ContentEncoding = [System.Text.Encoding]::UTF8
             }
