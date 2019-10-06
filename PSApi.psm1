@@ -163,6 +163,8 @@ function Publish-Command {
     } 
 
     try {
+        $listener = New-Object System.Net.HttpListener
+        $listener.Prefixes.Add($prefix_string)
         $listener.Start()
     }
     catch {
@@ -182,8 +184,6 @@ function Publish-Command {
     }
 
     $runspacepool = $dependencies | New-CustomRunspacePool -MaximumThreads $NumberOfThreads
-    $listener = New-Object System.Net.HttpListener
-    $listener.Prefixes.Add($prefix_string)
     
     # Add listener to a table in the script scope to aid in making other functions for starting/stopping it, etc.
     [void]$script:listener_table.add([PSCustomObject]@{
