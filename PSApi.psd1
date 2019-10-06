@@ -72,10 +72,10 @@ PowerShellVersion = '6.0'
 FunctionsToExport = 'Publish-Command', 'Unpublish-Command', 'Get-PublishedCommand', 'Remove-PSApiUrlAclReservation', 'Get-PSApiUrlAclReservation'
 
 # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
-CmdletsToExport = @()
+# CmdletsToExport = @()
 
 # Variables to export from this module
-VariablesToExport = '*'
+# VariablesToExport = '*'
 
 # Aliases to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no aliases to export.
 AliasesToExport = 'pcm', 'upcm', 'gpcm'
@@ -95,10 +95,10 @@ PrivateData = @{
     PSData = @{
 
         # Tags applied to this module. These help with module discovery in online galleries.
-        Tags = 'Web', 'API', 'Publish'
+        Tags = 'Web', 'API', 'Publish', 'Webservice', 'Core'
 
         # A URL to the license for this module.
-        # LicenseUri = ''
+        LicenseUri = 'https://github.com/NotNotWrongUsually/PSApi/blob/master/LICENSE'
 
         # A URL to the main website for this project.
         ProjectUri = 'https://github.com/NotNotWrongUsually/PSApi'
