@@ -12,8 +12,10 @@ The module is published to the Powershell Gallery, so install it with:
 
 Scope to taste, of course.
 
+The module requires PowerShell Core, and is tested on both Linux and Windows. Testing has been done on 6.2.3, but I believe nothing should prevent it from working from 6.0 and onwards.
+
 ## Long description
-The command has been supplied with relatively sane defaults. Using these, your command will be exposed at `http://localhost/PSApi/<your-command>` using port 80, a maximum of five background threads, dropping access logs in your current directory. The url prefix wildcard "+" is used for hostname by default, but can be overridden with the `Hostname` parameter. Consult the [Urlprefix documentation](https://docs.microsoft.com/en-us/windows/win32/http/urlprefix-strings) for more information.
+`Publish-Command` is supplied with relatively sane defaults. Using these, your command will be exposed at `http://localhost/PSApi/<your-command>` using port 80, a maximum of five background threads, dropping access logs in your current directory. The url prefix wildcard "+" is used for hostname by default, but can be overridden with the `Hostname` parameter. Consult the [Urlprefix documentation](https://docs.microsoft.com/en-us/windows/win32/http/urlprefix-strings) for more information.
 
 Using parameters for the command you can modify served path, port, hostname, logging location etc. Refer to the built-in help for Publish-Command for more information about the options.
 
@@ -41,10 +43,10 @@ Switch parameters are supplied in the following way (note the '=' sign after the
 Please note that parameters will always be strings when they arrive at your function. In most cases PowerShell's type coercion will make sure things are fine. Ambiguity can occur in certain cases, usually involving constructors for .NET objects (consider supplying the parameters "100", "100" to a class that has overloads for both `<string>`, `<int>` and `<string>`, `<string>`. If you run into bugs with this make sure you type your parameters correctly in your function and you should be fine.
 
 ## Running without Administrator/Root
-On Windows Administrator rights are needed to create an http listener. On Linux superuser rights are nedded to listen to anything below port 1023.
+On Windows Administrator rights are needed to create an http listener. On Linux superuser rights are nedded to listen to anything below port 1024.
     
 It is possible on Windows to reserve a URL for non-administrator use. This is the recommended way to publish a command on a more permanent basis. The module includes support for this via the `-AddUrlAcl` switch. From an elevated shell use `Publish-Command` as you normally would, but include the switch.
-Instead of publishing the command a URL reservation will be created. After this you can run the command (without the switch) from a non-elevated shell.
+Instead of publishing the command, a URL reservation will be created. After this you can run Publish-Command with the same parameters (except the switch) from a non-elevated shell.
 
 The module tries to keep track of which URL reservations it has made. The two commands Get-PSApiUrlAclReservation and Remove-PSApiUrlAclReservation are intended to help you manage these if you wish to clean up at a later point.
 
@@ -72,7 +74,7 @@ will be sent with a content type of text/html. For an exception refer to the not
 Anything that is not one of the above types will be stringified with the Out-String cmdlet and set to a content-type of text/plain. Notably this means that most things will look exactly like they do in the Powershell console.
 
 ## Is it safe?
-Care has been taken to avoid injection attacks by never parsing command inputs from anything but the HTTPListener path defined by the user. A number of scenarios like trying to inject code into strings with $(), semicolons, etc. have also been tested. Though nothing has been discovered so far, it is not adviced to expose any cmdlet to the Internet. Should you discover a way to exploit this module please create an issue at https://github.com/NotNotWrongUsually/PSApi so the matter can be addressed appropriately!
+Care has been taken to avoid injection attacks by never parsing command inputs from anything but the HTTPListener path defined by the user. A number of scenarios like trying to inject code into strings with $(), semicolons, etc. have also been tested. Though nothing has been discovered so far, it is not adviced to expose any cmdlet to the Internet for the time being. Should you discover a way to exploit this module please create an issue at https://github.com/NotNotWrongUsually/PSApi so the matter can be addressed appropriately!
     
 All that being said: *Any disaster you cause by using this module is entirely on you!*
 
@@ -113,6 +115,6 @@ Serving an image.
         New-Object System.Drawing.Bitmap -ArgumentList "C:\some_picture.jpg"
     }
 
-Going to `http://localhost/PSApi/Get-Image` will display the picture. The image types that can be loaded in by [System.Drawing.Bitmap](https://docs.microsoft.com/en-us/dotnet/api/system.drawing.bitmap?view=netcore-2.2) are all supported, but note that output will always be converted to .PNG.
+Going to `http://localhost/PSApi/Get-Image` will display the picture. The image types that can be loaded in by [System.Drawing.Bitmap](https://docs.microsoft.com/en-us/dotnet/api/system.drawing.bitmap?view=netcore-2.2) are all supported for input, but output will always be converted to .PNG.
 
-(Note that on Linux `libgdiplus` is needed before this example works)
+*(Note that on Linux `libgdiplus` is needed before this example works)*
