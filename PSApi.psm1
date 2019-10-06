@@ -318,7 +318,7 @@ function RequestHandler ($context, $Command, $log_writer, $RunSpaceDebugPreferen
 
     Write-Debug "REQUESTHANDLER: writing response"
     # Write a response to the request, distinguishing between images and text
-    switch ($response_data.GetType()) {
+    switch ($response_data.GetType().Name) {
         'String' {
             [byte[]]$buffer = [System.Text.Encoding]::UTF8.GetBytes($response_data)
         }
