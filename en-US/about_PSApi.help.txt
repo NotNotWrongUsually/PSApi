@@ -2,16 +2,15 @@
     about_PSApi
 
 SHORT DESCRIPTION
-    Provides an overall description of the PSApi module, how to use it, and some
-    common quirks and gotchas in calling exposed commands from a browser.
+    Provides an overall description of the PSApi module and how to use it. The
+    information below is an abbreviated version of the information found at
+    https://github.com/NotNotWrongUsually/PSApi
 
 LONG DESCRIPTION
     The PSApi module takes a function from your current session and publishes it
-    as a webservice. The command used for this is Publish-Command. Care has been
-    taken to supply the command with sane defaults. Using these, your command
-    will be exposed at:
+    as a webservice. Using defaults your command will be exposed at:
 
-    http://myhostname/PSApi/<your-command>
+    http://localhost/PSApi/<your-command>
 
     Using the parameters for the command you can modify the path, port, logging
     location etc. Refer to the help on Publish-Command for more information
@@ -20,35 +19,8 @@ LONG DESCRIPTION
     Any parameters for a published command can be supplied in the url query
     string.
 
-    The next examples require the command Get-Process to have been published.
-    You can do so with
-    
-    PS > Publish-Command Get-Process
-
-    This is the equivalent url for a command with a simple parameter.
-
-    Command: Get-Process -Name "notepad"
-
-    URL:     http://myhostname/PSApi/Get-Process?name=notepad
-
-    In some cases you may want to supply an array of strings. This can be done
-    in the following way.
-
-    Command: Get-Process -Name "notepad", "chrome"
-
-    URL:     http://myhostname/PSApi/Get-Process?name=notepad&name=chrome
-
-    Switch parameters are supplied in the following way (note the '=' sign after
-    the parameter):
-
-    Command: Get-Process -Name "notepad" -FileVersionInfo
-
-    URL:     http://myhostname/PSApi/Get-Process?name=notepad&FileVersionInfo=
-
 RETURN TYPES
-    If a published function emits certain outputs some special handling is
-    applied:
-
+    
     [XML]
     is turned into a string by using the OuterXml property of the object.
 
@@ -56,8 +28,8 @@ RETURN TYPES
     will be converted to png format and presented in the browser.
 
     [Microsoft.Powershell.Commands.HtmlWebResponseObject]
-    This is what Invoke-WebRequest gets back. It will be turned into a string by
-    using the content property, so only the actual html is passed on.
+    will be turned into a string by using the content property, so only the
+    actual html is passed on.
 
     [String]
     will be sent with a content type of text/html. For an exception refer to the
@@ -70,24 +42,11 @@ RETURN TYPES
     content-type will be set to application/json. The Test-Json cmdlet is not
     used for this as it appears utterly broken from testing.
 
+    [Everything else]
     Anything that is not one of the above types will be stringified with the
     Out-String cmdlet and set to a content-type of text/plain. Notably this
     means that most things will look exactly like they do in the Powershell
     console.
-
-IS IT SAFE?
-    Care has been taken to avoid injection attacks by never parsing command
-    inputs from anything but the HTTPListener path defined by the user. A number
-    of scenarios like trying to inject code into strings with $(), semicolons,
-    etc. have also been tested. Though nothing has been discovered so far, it is
-    not adviced to expose any cmdlet to the Internet. Should you discover a way
-    to exploit this module please create an issue at
-    https://github.com/NotNotWrongUsually/PSApi so the matter can be addressed
-    appropriately!
-    
-    All of that being said:
-    
-    *** ANY DISASTER YOU CAUSE BY USING THIS MODULE IS ENTIRELY ON YOU! ***
 
 EXAMPLES
 
@@ -95,9 +54,9 @@ EXAMPLES
 
     Creating a simple monitoring API showing the processes using most CPU time
  
-    PS > function Get-HighCpuConsumers ($number=3) {
-    >>     get-process | sort cpu -Descending |
-    >>     select Name, CPU, StartTime -first $number |
+    PS > function Get-HighCpuConsumers ($Top=5) {
+    >>     Get-Process | Sort-Object CPU -Descending |
+    >>     Select-Object Name, CPU, StartTime -First $Top |
     >>     ConvertTo-Json
     >> }
 
@@ -122,8 +81,6 @@ EXAMPLES
     >> }
 
     Going to http://myhostname/PSApi/Get-Image will display the picture.
-    
-    (Note that on Linux libgdiplus is needed before this example works)
 
 SEE ALSO
     Help Publish-Command for more examples
