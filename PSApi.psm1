@@ -111,7 +111,13 @@ function Publish-Command {
         break
     }
 
-    $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
+    if ($Path -ne "") {
+        $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
+    }
+    else {
+        $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Command + '/'
+    }
+    
     $got_root = IsInSuperuserRole
 
     if ($AddUrlAcl) {
