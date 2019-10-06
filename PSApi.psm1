@@ -91,6 +91,11 @@ function Publish-Command {
         $AddUrlAcl
     )
 
+    if (-not (Get-Command $Command -ErrorAction "SilentlyContinue")) {
+        Write-Warning "Command $Command not found!"
+        break
+    }
+
     $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
     $got_root = IsInSuperuserRole
 
@@ -142,6 +147,15 @@ function Publish-Command {
         }
     } 
 
+    try {
+        $listener.Start()
+    }
+    catch {
+        Write-Warning "Unable to start listener!"
+        throw $_
+        break
+    }
+
     # log_writer is used from inside runspaces, so needs to be thread-safe
     $log_writer = [System.IO.TextWriter]::Synchronized((New-Object System.IO.StreamWriter -ArgumentList $LogLocation, $true))
     $dependencies = @(Resolve-CommandDependencies $Command)
@@ -164,8 +178,6 @@ function Publish-Command {
             RunspacePool = $runspacepool
             LogFile      = $log_writer
         })
-    
-    $listener.Start()
     
     # Start the RequestRouter in a separate runspace.
     $params = @{
