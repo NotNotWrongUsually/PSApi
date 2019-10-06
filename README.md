@@ -40,7 +40,9 @@ Switch parameters are supplied in the following way (note the '=' sign after the
     Command:    Get-Process -Name "notepad" -FileVersionInfo
         URL:    http://myhostname/PSApi/Get-Process?name=notepad&FileVersionInfo=
 
-Please note that parameters will always be strings when they arrive at your function. In most cases PowerShell's type coercion will make sure things are fine. Ambiguity can occur in certain cases, usually involving constructors for .NET objects (consider supplying the parameters "100", "100" to a class that has overloads for both `<string>`, `<int>` and `<string>`, `<string>`. If you run into bugs with this make sure you type your parameters correctly in your function and you should be fine.
+Please note that parameters will always be strings when they arrive at your function. In most cases PowerShell's type coercion will make sure things are fine. Ambiguity can occur in certain cases, usually involving constructors for .NET objects (consider supplying the parameters "100", "100" to a class that has overloads for both `<string>`, `<int>` and `<string>`, `<string>`). If you run into bugs with this make sure you specify type for the parameters in your function and you should be fine.
+
+When a function has been published, changes to it in your local shell will not propagate to the published one, since it is running in a separate runspace. Either unpublish/republish the function, or run `Publish-Command` for it again, including the `-Force` switch (this is essentially the same us unpublish/republish).
 
 ## Running without Administrator/Root
 On Windows Administrator rights are needed to create an http listener. On Linux superuser rights are nedded to listen to anything below port 1024.
@@ -72,6 +74,12 @@ will be sent with a content type of text/html. For an exception refer to the not
 
 #### Everything else
 Anything that is not one of the above types will be stringified with the Out-String cmdlet and set to a content-type of text/plain. Notably this means that most things will look exactly like they do in the Powershell console.
+
+## Unpublishing commands
+The module includes an Unpublish-Command function to stop publishing functions. Quitting the shell works too.
+
+## Aliases
+pcm, upcm, gpcm is included for Publish-Command, Unpublish-Command, Get-PublishedCommand respectively.
 
 ## Is it safe?
 Care has been taken to avoid injection attacks by never parsing command inputs from anything but the HTTPListener path defined by the user. A number of scenarios like trying to inject code into strings with $(), semicolons, etc. have also been tested. Though nothing has been discovered so far, it is not adviced to expose any cmdlet to the Internet for the time being. Should you discover a way to exploit this module please create an issue at https://github.com/NotNotWrongUsually/PSApi so the matter can be addressed appropriately!
