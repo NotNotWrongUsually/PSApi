@@ -11,10 +11,10 @@ $task_list = [System.Collections.ArrayList]::Synchronized((New-Object System.Col
 function Publish-Command {
     <#
     .SYNOPSIS
-    Creates a HttpListener, enabling the command to be accessed via HTTP.
+    Creates a HttpListener, enabling a command to be accessed via HTTP.
     
     .DESCRIPTION
-    Long description
+    Makes a cmdlet or function available over http. Default parameters will use port 80, 5 threads, and the path http://localhost/PSApi/<Command>. Unpublish-Command can be used to undo the publishing of a function. If the served function changes it is necessary to re-publish it. Issuing Publish-Command again with the same parameters and including the -Force switch is useful for this.
     
     .PARAMETER Command
     Specifies the command to make available.
@@ -32,16 +32,21 @@ function Publish-Command {
     Specifies the number of runspaces that will be created to handle incoming web-requests. Minimum is 2, since listening for requests and handling requests are done in separate threads.
     
     .PARAMETER LogLocation
-    Specifies where the access log for the published command should be created.
+    Specifies where the access log for the published command should be created. Defaults to the location where the command is issued.
     
     .PARAMETER Force
     Indicates that the command should be automatically re-published by unpublishing any existing command with the same name first.
     
     .PARAMETER RunspaceDebugPreference
     Specifies the DebugPreference to be used in the runspaces created. Note that the runspaces are running asynchronously and messages will appear in the console even if you are using it for something else.
+
+    .PARAMETER AddUrlAcl
+    Indicates that instead of publishing the command, a urlacl prefix should be reserved. This will allow the command to be published without administrator rights. Only relevant for Windows.
     
     .EXAMPLE
     Publish-Command MyFunction
+
+    Publishes MyFunction at http://localhost/PSApi/MyFunction
 
     .EXAMPLE
     # Gets highest CPU consumers in current session
@@ -52,9 +57,19 @@ function Publish-Command {
     
     Publish-Command Get-HighCpuConsumers
 
-    Going to http://myhostname/PSApi/Get-HighCpuConsumers?Number=5 will now show the output of the function, with 5 passed into the Numbers parameter.
-    .NOTES
-    General notes
+    Going to http://myhostname/PSApi/Get-HighCpuConsumers?Number=5 will now show the output of the function, with 5 passed into the Number parameter.
+
+    .EXAMPLE
+    # From an un-elevated Windows shell
+    Publish-Command Get-Process
+    <results in error message>
+
+    # From an elevated Windows shell
+    Publish-Command Get-Process -AddUrlAcl
+
+    # From an un-elevated Windows shell
+    Publish-Command Get-Process
+    <success!>
     #>
     
     [CmdletBinding(DefaultParameterSetName = 'Publish')]
@@ -629,6 +644,17 @@ function New-UrlAclReservation ($prefix_string) {
 
 
 function Remove-PSApiUrlAclReservation ($prefix_string) {
+    <#
+    .DESCRIPTION
+    Aids in removing URL reservations made by this module. Best used in conjunction with Get-PSApiUrlAclReservation
+    
+    .PARAMETER prefix_string
+    The prefix string to remove.
+    
+    .EXAMPLE
+    Get-PSApiUrlAclReservation | foreach {Remove-PSApiUrlAclReservation $_}
+    #>
+    
     if ($IsWindows) {
         if (IsInSuperuserRole) {
             $storage_path = join-path (split-path (Get-Command Publish-Command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
@@ -648,6 +674,14 @@ function Remove-PSApiUrlAclReservation ($prefix_string) {
 
 # Get prefixes this cmdlet has added
 function Get-PSApiUrlAclReservation {
+    <#
+    .DESCRIPTION
+    Shows URL reservations performed by this module. Can be used in conjunction with Remove-PSApiUrlAclReservation to clean up.
+    
+    .EXAMPLE
+    Get-PSApiUrlAclReservation | foreach {Remove-PSApiUrlAclReservation $_}
+    #>
+    
     if ($IsWindows) {
         $storage_path = join-path (split-path (Get-Command publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
         Get-Content -Path $storage_path
