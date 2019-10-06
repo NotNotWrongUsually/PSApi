@@ -3,7 +3,7 @@
 ## Tl;dr
 The PSApi module takes a function or cmdlet from your current session and publishes it as a webservice. The command used for this is `Publish-Command`. It works like this:
 
-![Dandelion](https://i.imgur.com/ngPtd3R.png)
+![Screenshot](https://i.imgur.com/ngPtd3R.png)
 
 ## Installation instructions
 The module is published to the Powershell Gallery, so install it with:
