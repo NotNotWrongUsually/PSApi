@@ -122,7 +122,8 @@ EXAMPLES
     >> }
 
     Going to http://myhostname/PSApi/Get-Image will display the picture.
-
+    
+    (Note that on Linux libgdiplus is needed before this example works)
 
 SEE ALSO
     Help Publish-Command for more examples
