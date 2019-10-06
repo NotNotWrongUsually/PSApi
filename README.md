@@ -45,7 +45,7 @@ Please note that parameters will always be strings when they arrive at your func
 When a function has been published, changes to it in your local shell will not propagate to the published one, since it is running in a separate runspace. Either unpublish/republish the function, or run `Publish-Command` for it again, including the `-Force` switch (this is essentially the same us unpublish/republish).
 
 ## Running without Administrator/Root
-On Windows Administrator rights are needed to create an http listener. On Linux superuser rights are nedded to listen to anything below port 1024.
+On Windows, Administrator rights are needed to create an http listener. On Linux superuser rights are needed to listen to anything below port 1024.
     
 It is possible on Windows to reserve a URL for non-administrator use. This is the recommended way to publish a command on a more permanent basis. The module includes support for this via the `-AddUrlAcl` switch. From an elevated shell use `Publish-Command` as you normally would, but include the switch.
 Instead of publishing the command, a URL reservation will be created. After this you can run Publish-Command with the same parameters (except the switch) from a non-elevated shell.
