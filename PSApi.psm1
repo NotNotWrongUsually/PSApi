@@ -659,28 +659,3 @@ function IsInSuperuserRole {
         $false
     }
 }
-
-
-# Sample functions for testing, delete before publication!
-function WriteMeBack ($text) {
-    Write-Output $text
-}
-
-function Get-MigMan {
-    [xml]$char = Get-Content C:\windows\WinSxS\migration.xml
-    $char
-}
-
-function Get-DiskInfo {
-    Get-CimInstance win32_logicaldisk | Select-Object DeviceID, DriveType, ProviderName, VolumeName, Size, FreeSpace | convertto-json
-}
-
-function Get-Image {
-    $image = New-Object System.Drawing.Bitmap -ArgumentList "D:\backgrounds\ursus1920.jpg"
-    $image
-}
-
-function Get-HighCpuConsumers {
-    param($Number)
-    Get-Process | Sort-Object CPU -Descending | Select-Object Name, StartTime, CPU -First $Number | ConvertTo-Json
-}
