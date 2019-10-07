@@ -373,6 +373,7 @@ function RequestHandler ($context, $Command, $log_writer, $RunSpaceDebugPreferen
     $ip = $request.RemoteEndPoint.Address.IPAddressToString
     $log_writer.WriteLine("$ip - - [$(get-date -format o)] `"$($request.HttpMethod) $($request.Url) HTTP/$($request.ProtocolVersion)`" $($response.StatusCode) $($buffer.Length)")
     $log_writer.Flush()
+    $response.Dispose()
 }
 
 
