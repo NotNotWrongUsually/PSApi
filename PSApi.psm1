@@ -396,8 +396,9 @@ function Resolve-CommandDependencies {
     )
 
     begin {
-        # Used from the InspectCommand function. PSScriptAnalyzer is angry with it, but don't delete it :)
+        # Used from the InspectCommand function. PSScriptAnalyzer is angry with them, but don't delete :)
         $seen = New-Object System.Collections.ArrayList
+        $global_scope = [psmoduleinfo]::new($true)
     }
 
     process {
@@ -442,7 +443,8 @@ function InspectCommand ($name, $from_module = $null) {
             catch {
                 try {
                     # Nope ... then try finding it in the global scope
-                    $check_command = Get-Command $name -ErrorAction 'Stop'
+                    $check_command = $global_scope.Invoke( { param([string]$name); get-command $name }, $name)
+                    #$check_command = Get-Command $name -ErrorAction 'Stop'
                     Write-Debug "$name retrieved from global scope"       
                 }
                 catch { 
@@ -513,7 +515,15 @@ function InspectCommand ($name, $from_module = $null) {
             'StackTrace', 'This'
     
             foreach ($var_name in $variables_to_transfer) {
-                if ((Get-Variable $var_name -ErrorAction 'SilentlyContinue') -and $var_name -notin $variable_blacklist -and -not $check_command.Source) {
+                Write-Debug "Looking for variable $var_name in global scope"
+                try {
+                    $var = Get-Variable -Name $var_name -Scope 'Global' -ErrorAction 'Stop'
+                    $var = $true
+                }
+                catch {
+                    $var = $false
+                }
+                if ($var -and $var_name -notin $variable_blacklist -and -not $check_command.Source) {
                     WriteEntry 'Variable' $var_name
                 }
             }
