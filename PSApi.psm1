@@ -37,8 +37,8 @@ function Publish-Command {
     .PARAMETER Force
     Indicates that the command should be automatically re-published by unpublishing any existing command with the same name first.
     
-    .PARAMETER RunspaceDebugPreference
-    Specifies the DebugPreference to be used in the runspaces created. Note that the runspaces are running asynchronously and messages will appear in the console even if you are using it for something else.
+    .PARAMETER ShowDebugMessages
+    Indicates that debug messages from runspace should be routed to the terminal host.
 
     .PARAMETER AddUrlAcl
     Indicates that instead of publishing the command, a urlacl prefix should be reserved. This will allow the command to be published without administrator rights. Only relevant for Windows.
@@ -99,8 +99,8 @@ function Publish-Command {
         [switch]
         $Force = $false,
         [Parameter(ParameterSetName = 'Publish')]
-        [string]
-        $RunspaceDebugPreference = "SilentlyContinue",
+        [switch]
+        $ShowDebugMessages,
         [Parameter(Mandatory = $true, ParameterSetName = 'AddUrlAcl')]
         [switch]
         $AddUrlAcl
@@ -200,13 +200,20 @@ function Publish-Command {
             LogFile      = $log_writer
         })
     
+    if ($ShowDebugMessages) {
+        $host_proxy = $Host
+    }
+    else {
+        $host_proxy = $null
+    }
+    
     # Start the RequestRouter in a separate runspace.
     $params = @{
-        listener                = $listener
-        RunspacePool            = $runspacepool
-        task_list               = $task_list
-        log_writer              = $log_writer
-        RunspaceDebugPreference = $RunspaceDebugPreference
+        listener     = $listener
+        RunspacePool = $runspacepool
+        task_list    = $task_list
+        log_writer   = $log_writer
+        host_proxy   = $host_proxy
     }
     $router_runspace = [powershell]::create()
     $router_runspace.RunspacePool = $runspacepool
@@ -216,16 +223,15 @@ function Publish-Command {
 }
 
 
-function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $RunSpaceDebugPreference) {
+function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host_proxy) {
 
-    $DebugPreference = $RunSpaceDebugPreference
-    Write-Debug "REQUESTROUTER: Starting RequestRouter"
+    RSDebug "REQUESTROUTER: Starting RequestRouter"
 
     # The command we want to run is resolved from the listener instead of the incoming url to prevent us from ever
     # running anything except what the user published.
     $command_split = ($listener.Prefixes) -split "/"
     $Command = $command_split[$command_split.length - 2]
-    Write-Debug "REQUESTROUTER: Served command is $Command"
+    RSDebug "REQUESTROUTER: Served command is $Command"
 
     while ($listener.IsListening) {
         $finished = $false
@@ -238,13 +244,13 @@ function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $RunS
         }
         $context = $incoming.Result
 
-        Write-Debug "REQUESTROUTER: Incoming request received. Handing it over to RequestHandler"
+        RSDebug "REQUESTROUTER: Incoming request received. Handing it over to RequestHandler"
         # Send this request off for handling in a separate runspace.
         $params = @{
-            Context                 = $context
-            Command                 = $Command
-            log_writer              = $log_writer
-            RunSpaceDebugPreference = $RunSpaceDebugPreference
+            Context    = $context
+            Command    = $Command
+            log_writer = $log_writer
+            host_proxy = $host_proxy
         }
 
         $handler_runspace = [powershell]::create() 
@@ -272,14 +278,14 @@ function RemoveCompletedTasks {
 
 
 # The RequestHandler is what does the actual work to evaluate the request and provide the users with a response
-function RequestHandler ($context, $Command, $log_writer, $RunSpaceDebugPreference) {
+function RequestHandler ($context, $Command, $log_writer, $host_proxy) {
     
     $DebugPreference = $RunSpaceDebugPreference
-    Write-Debug "REQUESTHANDLER: starting handling of incoming request"
+    RSDebug "REQUESTHANDLER: starting handling of incoming request"
 
     $request = $context.Request
     $response = $context.Response
-    Write-Debug "REQUESTHANDLER: requested url is $($request.RawUrl)"
+    RSDebug "REQUESTHANDLER: requested url is $($request.RawUrl)"
 
     # The querystring is supplied as a NameValueCollection. We'll need to convert this to a hashtable for easy
     # splatting with the call operator.
@@ -303,7 +309,7 @@ function RequestHandler ($context, $Command, $log_writer, $RunSpaceDebugPreferen
         $response_data = & $Command @params -ErrorAction 'stop'
     }
     catch {
-        Write-Debug "REQUESTHANDLER: request handling produced an error"
+        RSDebug "REQUESTHANDLER: request handling produced an error"
         $response.StatusCode = 500
         $response_data = "<html><head><title>Something bad happened :(</title></head>
                           <body><font face='Courier New'>
@@ -317,39 +323,45 @@ function RequestHandler ($context, $Command, $log_writer, $RunSpaceDebugPreferen
     }
     
     # Next section is special handling to try and do proper return types
-    Write-Debug "REQUESTHANDLER: starting inspection of content"
+    RSDebug "REQUESTHANDLER: starting inspection of content"
     switch ($response_data.GetType().Name) {
         'String' {
             if (IsJson $response_data) {
+                RSDebug "REQUESTHANDLER: content determined to be JSON"
                 $response.ContentType = "application/json;charset=utf-8"
                 $response.ContentEncoding = [System.Text.Encoding]::UTF8
             }
             else {
+                RSDebug "REQUESTHANDLER: content determined to be [string], will show as html"
                 $response.ContentType = "text/html"
                 $response.ContentEncoding = [System.Text.Encoding]::UTF8
             }
         }
         'XmlDocument' {
+            RSDebug "REQUESTHANDLER: content determined to be XML"
             $response_data = $response_data.OuterXml
             $response.ContentType = "text/xml;charset=utf-8"
             $response.ContentEncoding = [System.Text.Encoding]::UTF8
         }
         'Bitmap' {
+            RSDebug "REQUESTHANDLER: content determined to be an image"
             $response.ContentType = "image/png"
         }
         'BasicHtmlWebResponseObject' {
+            RSDebug "REQUESTHANDLER: content determined to be html"
             $response.ContentType = "text/html;charset=utf-8"
             $response.ContentEncoding = [System.Text.Encoding]::UTF8
             $response_data = $response_data.Content
         }
         Default {
+            RSDebug "REQUESTHANDLER: could not determine content type. Stringifying and outputting."
             $response.ContentType = "text/plain;charset=utf-8"
             $response.ContentEncoding = [System.Text.Encoding]::UTF8
             $response_data = $response_data | Out-String 
         }
     }
 
-    Write-Debug "REQUESTHANDLER: writing response"
+    RSDebug "REQUESTHANDLER: writing response"
     # Write a response to the request, distinguishing between images and text
     switch ($response_data.GetType().Name) {
         'String' {
@@ -367,13 +379,20 @@ function RequestHandler ($context, $Command, $log_writer, $RunSpaceDebugPreferen
     $response.ContentLength64 = $buffer.length
     $response.OutputStream.Write($buffer, 0, $buffer.length)
     $response.OutputStream.Close()
-    Write-Debug "REQUESTHANDLER: response sent"
+    RSDebug "REQUESTHANDLER: response sent"
 
     # Write a logfile entry in Common Log Format
     $ip = $request.RemoteEndPoint.Address.IPAddressToString
     $log_writer.WriteLine("$ip - - [$(get-date -format o)] `"$($request.HttpMethod) $($request.Url) HTTP/$($request.ProtocolVersion)`" $($response.StatusCode) $($buffer.Length)")
     $log_writer.Flush()
     $response.Dispose()
+}
+
+
+function RSDebug ($message) {
+    if ($host_proxy) {
+        $host_proxy.UI.WriteDebugLine($message)
+    }
 }
 
 
@@ -612,7 +631,9 @@ function New-CustomRunspacePool {
       
     }
     end {
-        $runspace_pool = [runspacefactory]::CreateRunspacePool(1, $MaximumThreads, $session_state, $Host)
+        #$runspace_pool = [runspacefactory]::CreateRunspacePool(1, $MaximumThreads, $session_state, $Host)
+        $runspace_pool = [runspacefactory]::CreateRunspacePool($session_state)
+        [void]$runspace_pool.SetMaxRunspaces($MaximumThreads)
         $runspace_pool.Open()
         $runspace_pool
     }
