@@ -43,6 +43,9 @@ function Publish-Command {
     .PARAMETER AddUrlAcl
     Indicates that instead of publishing the command, a urlacl prefix should be reserved. This will allow the command to be published without administrator rights. Only relevant for Windows.
     
+    .PARAMETER JSONErrorMode
+    Indicates that 500 error messages should be returned as JSON instead of as HTML.
+    
     .EXAMPLE
     Publish-Command MyFunction
 
@@ -311,7 +314,16 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy) {
     catch {
         RSDebug "REQUESTHANDLER: request handling produced an error"
         $response.StatusCode = 500
-        $response_data = "<html><head><title>Something bad happened :(</title></head>
+        if($JSONErrorMode) {
+            $response_data = @{
+                message = $_.Exception.Message
+                params = $params
+                category_info = $_.CategoryInfo
+                command = $Command
+            }
+        }
+        else {
+            $response_data = "<html><head><title>Something bad happened :(</title></head>
                           <body><font face='Courier New'>
                           <h1 style='background-color: #000000; color: #800000'>HTTP 500 - Internal Server Error</h1>
                           <p><b>Command:</b><br>$Command</p>
@@ -320,6 +332,7 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy) {
                           <p><b>Category info:</b><br>$((($_.CategoryInfo | Out-String) -replace "`n", "<br>") -replace " ", "&nbsp;")</p>
                           </font></body>
                           </html>"
+        }
     }
     
     # Next section is special handling to try and do proper return types
