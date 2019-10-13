@@ -107,6 +107,8 @@ function Publish-Command {
         [Parameter(Mandatory = $true, ParameterSetName = 'AddUrlAcl')]
         [switch]
         $AddUrlAcl
+        [switch]
+        $JSONErrorMode
     )
 
     if (-not (Get-Command $Command -ErrorAction "SilentlyContinue")) {
@@ -320,7 +322,7 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy) {
                 params = $params
                 category_info = $_.CategoryInfo
                 command = $Command
-            }
+            } | ConvertTo-JSON
         }
         else {
             $response_data = "<html><head><title>Something bad happened :(</title></head>
