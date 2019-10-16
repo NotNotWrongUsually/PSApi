@@ -43,6 +43,9 @@ function Publish-Command {
     .PARAMETER AddUrlAcl
     Indicates that instead of publishing the command, a urlacl prefix should be reserved. This will allow the command to be published without administrator rights. Only relevant for Windows.
     
+    .PARAMETER JSONErrorMode
+    Indicates that 500 error messages should be returned as JSON instead of as HTML.
+    
     .EXAMPLE
     Publish-Command MyFunction
 
@@ -103,7 +106,10 @@ function Publish-Command {
         $ShowDebugMessages,
         [Parameter(Mandatory = $true, ParameterSetName = 'AddUrlAcl')]
         [switch]
-        $AddUrlAcl
+        $AddUrlAcl,
+        [Parameter(ParameterSetName = 'Publish')]
+        [switch]
+        $JSONErrorMode
     )
 
     if (-not (Get-Command $Command -ErrorAction "SilentlyContinue")) {
@@ -193,11 +199,12 @@ function Publish-Command {
     
     # Add listener to a table in the script scope to aid in making other functions for starting/stopping it, etc.
     [void]$script:listener_table.add([PSCustomObject]@{
-            Command      = $Command
-            Prefix       = $prefix_string
-            Listener     = $listener
-            RunspacePool = $runspacepool
-            LogFile      = $log_writer
+            Command       = $Command
+            Prefix        = $prefix_string
+            Listener      = $listener
+            RunspacePool  = $runspacepool
+            LogFile       = $log_writer
+            JSONErrorMode = $JSONErrorMode
         })
     
     if ($ShowDebugMessages) {
@@ -209,11 +216,12 @@ function Publish-Command {
     
     # Start the RequestRouter in a separate runspace.
     $params = @{
-        listener     = $listener
-        RunspacePool = $runspacepool
-        task_list    = $task_list
-        log_writer   = $log_writer
-        host_proxy   = $host_proxy
+        listener      = $listener
+        RunspacePool  = $runspacepool
+        task_list     = $task_list
+        log_writer    = $log_writer
+        host_proxy    = $host_proxy
+        JSONErrorMode = $JSONErrorMode
     }
     $router_runspace = [powershell]::create()
     $router_runspace.RunspacePool = $runspacepool
@@ -223,7 +231,7 @@ function Publish-Command {
 }
 
 
-function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host_proxy) {
+function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host_proxy, $JSONErrorMode) {
 
     RSDebug "REQUESTROUTER: Starting RequestRouter"
 
@@ -251,6 +259,7 @@ function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host
             Command    = $Command
             log_writer = $log_writer
             host_proxy = $host_proxy
+            JSONErrorMode = $JSONErrorMode
         }
 
         $handler_runspace = [powershell]::create() 
@@ -278,7 +287,7 @@ function RemoveCompletedTasks {
 
 
 # The RequestHandler is what does the actual work to evaluate the request and provide the users with a response
-function RequestHandler ($context, $Command, $log_writer, $host_proxy) {
+function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErrorMode) {
     
     $DebugPreference = $RunSpaceDebugPreference
     RSDebug "REQUESTHANDLER: starting handling of incoming request"
@@ -311,15 +320,25 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy) {
     catch {
         RSDebug "REQUESTHANDLER: request handling produced an error"
         $response.StatusCode = 500
-        $response_data = "<html><head><title>Something bad happened :(</title></head>
+        if($JSONErrorMode) {
+            $response_data = @{
+                message = $_.Exception.Message
+                params = $params
+                category_info = $_.CategoryInfo
+                command = $Command
+            } | ConvertTo-JSON
+        }
+        else {
+            $response_data = "<html><head><title>Something bad happened :(</title></head>
                           <body><font face='Courier New'>
                           <h1 style='background-color: #000000; color: #800000'>HTTP 500 - Internal Server Error</h1>
-                          <p><b>Command:</b><br>$Command</p>
+                          <p><b>Command:</b><br>$Command $(if($global:JSONErrorMode) { 'true' } else { 'false' })</p>
                           <p><b>Error message:</b><br>$($_.Exception.Message)</p>
                           <p><b>Parameters:</b><br>$((($params | Out-String)  -replace "`n", "<br>") -replace " ", "&nbsp;")</p>                      
                           <p><b>Category info:</b><br>$((($_.CategoryInfo | Out-String) -replace "`n", "<br>") -replace " ", "&nbsp;")</p>
                           </font></body>
                           </html>"
+        }
     }
     
     # Next section is special handling to try and do proper return types
