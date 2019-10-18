@@ -255,10 +255,10 @@ function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host
         RSDebug "REQUESTROUTER: Incoming request received. Handing it over to RequestHandler"
         # Send this request off for handling in a separate runspace.
         $params = @{
-            Context    = $context
-            Command    = $Command
-            log_writer = $log_writer
-            host_proxy = $host_proxy
+            Context       = $context
+            Command       = $Command
+            log_writer    = $log_writer
+            host_proxy    = $host_proxy
             JSONErrorMode = $JSONErrorMode
         }
 
@@ -296,21 +296,47 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
     $response = $context.Response
     RSDebug "REQUESTHANDLER: requested url is $($request.RawUrl)"
 
-    # The querystring is supplied as a NameValueCollection. We'll need to convert this to a hashtable for easy
-    # splatting with the call operator.
     $params = @{ }
-    $request.QueryString.Keys | ForEach-Object {
-        $value = $request.QueryString.GetValues($_)
-        # Prevent a one-object array being passed on. Functions which do not take arrays are not happy about this.
-        if ($value.count -eq 1) {
-            $value = $value[0]
+
+    if ($request.HttpMethod -eq "GET") {
+        # The querystring is supplied as a NameValueCollection. We'll need to convert this to a hashtable for easy
+        # splatting with the call operator.
+        $request.QueryString.Keys | ForEach-Object {
+            $value = $request.QueryString.GetValues($_)
+            # Prevent a one-object array being passed on. Functions which do not take arrays are not happy about this.
+            if ($value.count -eq 1) {
+                $value = $value[0]
+            }
+            # This is to handle switch parameters. This feels a bit wrong. Are there actual cases where an empty string
+            # would be passed explicitly as a parameter? Assuming no, for now.
+            if ($value -eq "" -and $value.count -eq 1) {
+                $value = $true
+            }
+            $params.Add($_, $value)
         }
-        # This is to handle switch parameters. This feels a bit wrong. Are there actual cases where an empty string
-        # would be passed explicitly as a parameter? Assuming no, for now.
-        if ($value -eq "" -and $value.count -eq 1) {
-            $value = $true
+    }
+    else {
+        $reader = New-Object System.IO.StreamReader -ArgumentList $request.InputStream, $request.ContentEncoding
+        $post_data = $reader.ReadToEnd()
+        # The parameters can arrive either as a JSON payload, or URL encoded
+        if (IsJson $post_data) {
+            $params_object = $post_data | ConvertFrom-Json
+            $params_object.psobject.properties | ForEach-Object {
+                $params.add($_.Name, $_.Value)
+            }
         }
-        $params.Add($_, $value)
+        else {
+            $parameter_list = $post_data -split '&'
+            $parameter_list | ForEach-Object {
+                $name, $value = $_ -split '='
+                $name = [System.Web.HttpUtility]::UrlDecode($name)
+                $value = [System.Web.HttpUtility]::UrlDecode($value)
+                if ($value) {
+                    $params.Add($name, $value)
+                }
+            }
+        }
+        $reader.Dispose()
     }
 
     # For now error 500 is what will be thrown if the code encounters _any_ error
@@ -320,12 +346,12 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
     catch {
         RSDebug "REQUESTHANDLER: request handling produced an error"
         $response.StatusCode = 500
-        if($JSONErrorMode) {
+        if ($JSONErrorMode) {
             $response_data = @{
-                message = $_.Exception.Message
-                params = $params
+                message       = $_.Exception.Message
+                params        = $params
                 category_info = $_.CategoryInfo
-                command = $Command
+                command       = $Command
             } | ConvertTo-JSON
         }
         else {
