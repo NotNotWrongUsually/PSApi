@@ -19,7 +19,7 @@ The module requires PowerShell Core, and is tested on both Linux and Windows. Te
 
 Using parameters for the command you can modify served path, port, hostname, logging location etc. Refer to the built-in help for Publish-Command for more information about the options.
 
-Parameters for a published command are supplied in the url query string.
+Parameters for a published command are supplied in the url query string, or - using POST - a JSON payload. Url encoded form data as supplied with an HTML form will be interpreted correctly as well for both GET and POST (example 3 below shows using a form to supply parameters).
 
 The next examples require the command Get-Process to have been published. You can do so with:
 
@@ -43,6 +43,8 @@ Switch parameters are supplied in the following way (note the '=' sign after the
 Please note that parameters will always be strings when they arrive at your function. In most cases PowerShell's type coercion will make sure things are fine. Ambiguity can occur in certain cases, usually involving constructors for .NET objects (consider supplying the parameters "100", "100" to a class that has overloads for both `<string>`, `<int>` and `<string>`, `<string>`). If you run into bugs with this make sure you specify type for the parameters in your function and you should be fine.
 
 When a function has been published, changes to it in your local shell will not propagate to the published one, since it is running in a separate runspace. Either unpublish/republish the function, or run `Publish-Command` for it again, including the `-Force` switch (this is essentially the same us unpublish/republish).
+
+If an exception is raised during execution of a published command a custom HTTP 500 page will be returned. By default this is HTML, but this behaviour can be overridden with the switch parameter `-JSONErrorMode`.
 
 ## Running without Administrator/Root
 On Windows, Administrator rights are needed to create an http listener. On Linux superuser rights are needed to listen to anything below port 1024.
@@ -126,3 +128,31 @@ Serving an image.
 Going to `http://localhost/PSApi/Get-Image` will display the picture. The image types that can be loaded in by [System.Drawing.Bitmap](https://docs.microsoft.com/en-us/dotnet/api/system.drawing.bitmap?view=netcore-2.2) are all supported for input, but output will always be converted to .PNG.
 
 *(Note that on Linux `libgdiplus` is needed before this example works)*
+
+### Example 3
+
+Using a HTML form to gather input for the command
+
+    function Show-Name ($Name) {
+        if (-not $Name) {
+            # Display a form
+            @'
+            <html>
+              <head>
+                <title>A form!</title>
+              </head>
+              <body>
+                <h1>What is your name?</h1>
+                <form action="http://localhost/PSApi/Show-Name" method="GET">
+                  Name<br>
+                  <input type="text" name="Name"><br>
+                  <input type="submit" value="Submit">
+                </form>
+              </body>
+            </html>
+    '@ 
+        } else {
+            # This will only run if name was supplied
+            "The entered name was $Name"
+        }
+    }
