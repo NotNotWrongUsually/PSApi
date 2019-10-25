@@ -45,6 +45,9 @@ function Publish-Command {
     
     .PARAMETER JSONErrorMode
     Indicates that 500 error messages should be returned as JSON instead of as HTML.
+
+    .PARAMETER CorsPolicy
+    Specifies the CORS policy for the published command. This is only needed if you want a webpage served from another host or port to retrieve results from your published command. Use New-PSApiCorsPolicy to generate a value for this parameter.
     
     .EXAMPLE
     Publish-Command MyFunction
@@ -73,7 +76,14 @@ function Publish-Command {
     # From an un-elevated Windows shell
     Publish-Command Get-Process
     <success!>
+
+    .EXAMPLE
+    # I just want CORS to go away
+    PS > $cors_policy = New-PSApiCorsPolicy -Allow-Origin '*'
+    PS > Publish-Command My-Command -CorsPolicy $cors_policy
     #>
+
+
     
     [CmdletBinding(DefaultParameterSetName = 'Publish')]
     param (
@@ -109,7 +119,10 @@ function Publish-Command {
         $AddUrlAcl,
         [Parameter(ParameterSetName = 'Publish')]
         [switch]
-        $JSONErrorMode
+        $JSONErrorMode,
+        [Parameter(ParameterSetName = 'Publish')]
+        [PSCustomObject]
+        $CorsPolicy
     )
 
     if (-not (Get-Command $Command -ErrorAction "SilentlyContinue")) {
@@ -222,6 +235,7 @@ function Publish-Command {
         log_writer    = $log_writer
         host_proxy    = $host_proxy
         JSONErrorMode = $JSONErrorMode
+        CorsPolicy    = $CorsPolicy
     }
     $router_runspace = [powershell]::create()
     $router_runspace.RunspacePool = $runspacepool
@@ -231,7 +245,7 @@ function Publish-Command {
 }
 
 
-function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host_proxy, $JSONErrorMode) {
+function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host_proxy, $JSONErrorMode, $CorsPolicy) {
 
     RSDebug "REQUESTROUTER: Starting RequestRouter"
 
@@ -260,13 +274,14 @@ function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host
             log_writer    = $log_writer
             host_proxy    = $host_proxy
             JSONErrorMode = $JSONErrorMode
+            CorsPolicy    = $CorsPolicy
         }
 
         $handler_runspace = [powershell]::create() 
         $handler_runspace.RunspacePool = $runspacepool
         [void]$handler_runspace.AddCommand("RequestHandler").AddParameters($params)
         $handle = $handler_runspace.InvokeAsync()
-        [void]$task_list.Add([pscustomobject]@{runspace = $handler_runspace; handle = $handle; thread = [System.Threading.Thread]::CurrentThread })
+        [void]$task_list.Add([PSCustomObject]@{runspace = $handler_runspace; handle = $handle; thread = [System.Threading.Thread]::CurrentThread })
         RemoveCompletedTasks
     }
 }
@@ -287,7 +302,7 @@ function RemoveCompletedTasks {
 
 
 # The RequestHandler is what does the actual work to evaluate the request and provide the users with a response
-function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErrorMode) {
+function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErrorMode, $CorsPolicy) {
     
     $DebugPreference = $RunSpaceDebugPreference
     RSDebug "REQUESTHANDLER: starting handling of incoming request"
@@ -295,6 +310,13 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
     $request = $context.Request
     $response = $context.Response
     RSDebug "REQUESTHANDLER: requested url is $($request.RawUrl)"
+
+    # Set the specified CORS policy if any
+    if ($CorsPolicy) {
+        $CorsPolicy.GetEnumerator() | ForEach-Object {
+            $response.Headers.Add($_.Key, $_.Value)
+        }
+    }
 
     $params = @{ }
 
@@ -315,7 +337,7 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
             $params.Add($_, $value)
         }
     }
-    else {
+    elseif ($request.HttpMethod -eq "POST") {
         $reader = New-Object System.IO.StreamReader -ArgumentList $request.InputStream, $request.ContentEncoding
         $post_data = $reader.ReadToEnd()
         # The parameters can arrive either as a JSON payload, or URL encoded
@@ -339,6 +361,7 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
         $reader.Dispose()
     }
 
+    # Try to run the users command
     # For now error 500 is what will be thrown if the code encounters _any_ error
     try {
         $response_data = & $Command @params -ErrorAction 'stop'
@@ -787,4 +810,62 @@ function IsInSuperuserRole {
     else {
         $false
     }
+}
+
+
+function New-PSApiCorsPolicy {
+    <#
+    .SYNOPSIS
+    Creates a policy for Cross-Origin Resource Sharing to pass to PSApi.
+    
+    .DESCRIPTION
+    Creates a policy for Cross-Origin Resource Sharing to pass to PSApi. Note that all CORS elements are implemented, even those that do not make any sense to PSApi currently. To get a better understanding of CORS read up on the documentation at https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS.
+    
+    .PARAMETER Allow-Origin
+    Sets one or more values for the Access-Control-Allow-Origin header.
+    
+    .PARAMETER Allow-Credentials
+    Sets the value for the Access-Control-Allow-Credentials header.
+    
+    .PARAMETER Expose-Headers
+    Sets the value for the Access-Control-Expose-Headers header.
+    
+    .PARAMETER Max-Age
+    Sets the value for the Access-Control-Max-Age header.
+    
+    .PARAMETER Allow-Methods
+    Sets one or more values for the Access-Control-Allow-Methods header.
+    
+    .PARAMETER Allow-Headers
+    Sets one or more values for the Access-Control-Allow-Headers header.
+    
+    .EXAMPLE
+    # I just want CORS to go away
+    PS > $cors_policy = New-PSApiCorsPolicy -Allow-Origin '*'
+    PS > Publish-Command My-Command -CorsPolicy $cors_policy
+    
+    .NOTES
+    General notes
+    #>
+    
+    [CmdletBinding()]
+    param (
+        [string[]]${Allow-Origin},
+        [switch]${Allow-Credentials},
+        [string[]]${Expose-Headers},
+        [int]${Max-Age},
+        [string[]]${Allow-Methods},
+        [string[]]${Allow-Headers}
+    )
+    [PSCustomObject]$output = @{ }
+    $psboundparameters.GetEnumerator() | ForEach-Object {
+        if ($_.Value.Count -gt 1) {
+            $val = $_.Value -join ", "
+        }
+        else {
+            $val = $_.Value[0]
+        }
+        $output['Access-Control-' + $_.Key] = $val
+    }
+    $output
 }
