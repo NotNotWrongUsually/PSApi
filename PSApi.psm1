@@ -846,7 +846,7 @@ function New-PSApiCorsPolicy {
     Creates a policy for Cross-Origin Resource Sharing to pass to PSApi. Note that all CORS elements are implemented, even those that do not make any sense to PSApi currently. To get a better understanding of CORS read up on the documentation at https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS.
     
     .PARAMETER Allow-Origin
-    Sets one or more values for the Access-Control-Allow-Origin header.
+    Sets one or more values for the Access-Control-Allow-Origin header. Origin will be checked at request time, and only the calling host will be returned in the Access-Control-Allow-Origin header.
     
     .PARAMETER Allow-Credentials
     Sets the value for the Access-Control-Allow-Credentials header.

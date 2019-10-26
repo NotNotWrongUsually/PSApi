@@ -131,7 +131,7 @@ Going to `http://localhost/PSApi/Get-Image` will display the picture. The image 
 
 ### Example 3
 
-Using a HTML form to gather input for the command
+Using an HTML form to gather input for the command
 
     function Show-Name ($Name) {
         if (-not $Name) {
@@ -156,3 +156,10 @@ Using a HTML form to gather input for the command
             "The entered name was $Name"
         }
     }
+
+### Example 4
+
+Setting up CORS to accept POST requests with specific content-type (e.g. 'application/json') (this is only ever needed if you want a website from a different host accessing your command)
+
+    $cors = New-PSApiCorsPolicy -Allow-Origin '*' -Allow-Methods 'POST, GET' -Allow-Headers 'Content-Type'
+    Publish-Command <myfunction> -CorsPolicy $cors
