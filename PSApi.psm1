@@ -311,10 +311,20 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
     $response = $context.Response
     RSDebug "REQUESTHANDLER: requested url is $($request.RawUrl)"
 
-    # Set the specified CORS policy if any
-    if ($CorsPolicy) {
+    # Set the specified CORS policy if any and relevant
+    if ($null -ne $request.Headers['Origin'] -and $CorsPolicy) {
         $CorsPolicy.GetEnumerator() | ForEach-Object {
             $response.Headers.Add($_.Key, $_.Value)
+        }
+
+        if ($CorsPolicy['Access-Control-Allow-Origin'] -ne '*' -and $CorsPolicy['Access-Control-Allow-Origin'] -ne 'null') {
+            if ($request.Headers['Origin'] -in $CorsPolicy['Access-Control-Allow-Origin'].Replace(' ', '').Split(',')) {
+                $response.Headers.Add('Vary', 'Origin')
+                $response.Headers.Set('Access-Control-Allow-Origin', $request.Headers['Origin'])
+            }
+            else {
+                $response.Headers.Remove('Access-Control-Allow-Origin')
+            }
         }
     }
 
@@ -360,11 +370,25 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
         }
         $reader.Dispose()
     }
+    elseif ($request.HttpMethod -eq 'OPTIONS') {
+        $response.Headers.Add('Allow', 'GET, POST, OPTIONS')
+        $response_data = ''
+        $skip_processing = $true
+    }
+    else {
+        # Someone is trying to do a request with a method apart from GET, POST or OPTIONS.
+        $response.StatusCode = 405
+        $response.Headers.Add('Allow', 'GET, POST, OPTIONS')
+        $response_data = "HTTP 405 - Method Not Allowed"
+        $skip_processing = $true
+    }
 
     # Try to run the users command
     # For now error 500 is what will be thrown if the code encounters _any_ error
     try {
-        $response_data = & $Command @params -ErrorAction 'stop'
+        if (-not $skip_processing) {
+            $response_data = & $Command @params -ErrorAction 'stop'
+        }
     }
     catch {
         RSDebug "REQUESTHANDLER: request handling produced an error"
