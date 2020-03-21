@@ -40,6 +40,9 @@ function Publish-Command {
     .PARAMETER ShowDebugMessages
     Indicates that debug messages from runspace should be routed to the terminal host.
 
+    .PARAMETER ShowLogMessages
+    Indicates that messages that would normally go in the logfile should also be output to the terminal host.
+
     .PARAMETER AddUrlAcl
     Indicates that instead of publishing the command, a urlacl prefix should be reserved. This will allow the command to be published without administrator rights. Only relevant for Windows.
     
@@ -104,7 +107,7 @@ function Publish-Command {
         [string]
         $Path = "PSApi",
         [Parameter(ParameterSetName = 'Publish')]
-        [ValidateScript( { if ($_ -lt 2) { Throw "At least 2 threads are required for the server to run properly!" } })][int]$NumberOfThreads = 5,
+        [ValidateScript( { if ($_ -gt 2) {$true} else { Throw "At least 2 threads are required for the server to run properly!" } })][int]$NumberOfThreads = 5,
         [Parameter(ParameterSetName = 'Publish')]
         [string]
         $LogLocation = (Join-Path -Path (get-location).path -ChildPath "$Command`_access.log"),
@@ -122,7 +125,10 @@ function Publish-Command {
         $JSONErrorMode,
         [Parameter(ParameterSetName = 'Publish')]
         [PSCustomObject]
-        $CorsPolicy
+        $CorsPolicy,
+        [Parameter(ParameterSetName = 'Publish')]
+        [switch]
+        $ShowLogMessages
     )
 
     if (-not (Get-Command $Command -ErrorAction "SilentlyContinue")) {
@@ -209,33 +215,39 @@ function Publish-Command {
     }
 
     $runspacepool = $dependencies | New-CustomRunspacePool -MaximumThreads $NumberOfThreads
-    
-    # Add listener to a table in the script scope to aid in making other functions for starting/stopping it, etc.
-    [void]$script:listener_table.add([PSCustomObject]@{
-            Command       = $Command
-            Prefix        = $prefix_string
-            Listener      = $listener
-            RunspacePool  = $runspacepool
-            LogFile       = $log_writer
-            JSONErrorMode = $JSONErrorMode
-        })
-    
-    if ($ShowDebugMessages) {
+
+    if ($ShowDebugMessages -or $ShowLogMessages) {
         $host_proxy = $Host
     }
     else {
         $host_proxy = $null
     }
+
+    # We'll need to pass these between runspaces, so putting them in a nice object
+    $configurations = [PSCustomObject]@{
+        LogWriter     = $log_writer
+        JSONErrorMode = $JSONErrorMode
+        ShowDebug     = $ShowDebugMessages
+        LogToConsole  = $ShowLogMessages
+        CorsPolicy    = $CorsPolicy
+        HostProxy     = $host_proxy
+    }
+
+    # Add information to a table in the script scope to aid in making other functions for starting/stopping it, etc.
+    [void]$script:listener_table.add([PSCustomObject]@{
+            Command       = $Command
+            Prefix        = $prefix_string
+            Listener      = $listener
+            RunspacePool  = $runspacepool
+            Configuration = $configurations
+        })
     
     # Start the RequestRouter in a separate runspace.
     $params = @{
         listener      = $listener
         RunspacePool  = $runspacepool
         task_list     = $task_list
-        log_writer    = $log_writer
-        host_proxy    = $host_proxy
-        JSONErrorMode = $JSONErrorMode
-        CorsPolicy    = $CorsPolicy
+        Configuration = $configurations
     }
     $router_runspace = [powershell]::create()
     $router_runspace.RunspacePool = $runspacepool
@@ -245,7 +257,7 @@ function Publish-Command {
 }
 
 
-function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host_proxy, $JSONErrorMode, $CorsPolicy) {
+function RequestRouter ($listener, $runspacepool, $task_list, $configuration) {
 
     RSDebug "REQUESTROUTER: Starting RequestRouter"
 
@@ -271,10 +283,7 @@ function RequestRouter ($listener, $runspacepool, $task_list, $log_writer, $host
         $params = @{
             Context       = $context
             Command       = $Command
-            log_writer    = $log_writer
-            host_proxy    = $host_proxy
-            JSONErrorMode = $JSONErrorMode
-            CorsPolicy    = $CorsPolicy
+            Configuration = $configuration
         }
 
         $handler_runspace = [powershell]::create() 
@@ -302,9 +311,9 @@ function RemoveCompletedTasks {
 
 
 # The RequestHandler is what does the actual work to evaluate the request and provide the users with a response
-function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErrorMode, $CorsPolicy) {
+function RequestHandler ($context, $Command, $configuration) {
     
-    $DebugPreference = $RunSpaceDebugPreference
+    # $DebugPreference = $RunSpaceDebugPreference   Is this just a leftover?
     RSDebug "REQUESTHANDLER: starting handling of incoming request"
 
     $request = $context.Request
@@ -312,13 +321,13 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
     RSDebug "REQUESTHANDLER: requested url is $($request.RawUrl)"
 
     # Set the specified CORS policy if any and relevant
-    if ($null -ne $request.Headers['Origin'] -and $CorsPolicy) {
+    if ($null -ne $request.Headers['Origin'] -and $configuration.CorsPolicy) {
         $CorsPolicy.GetEnumerator() | ForEach-Object {
             $response.Headers.Add($_.Key, $_.Value)
         }
 
-        if ($CorsPolicy['Access-Control-Allow-Origin'] -ne '*' -and $CorsPolicy['Access-Control-Allow-Origin'] -ne 'null') {
-            if ($request.Headers['Origin'] -in $CorsPolicy['Access-Control-Allow-Origin'].Replace(' ', '').Split(',')) {
+        if ($configuration.CorsPolicy['Access-Control-Allow-Origin'] -ne '*' -and $configuration.CorsPolicy['Access-Control-Allow-Origin'] -ne 'null') {
+            if ($request.Headers['Origin'] -in $configuration.CorsPolicy['Access-Control-Allow-Origin'].Replace(' ', '').Split(',')) {
                 $response.Headers.Add('Vary', 'Origin')
                 $response.Headers.Set('Access-Control-Allow-Origin', $request.Headers['Origin'])
             }
@@ -393,7 +402,7 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
     catch {
         RSDebug "REQUESTHANDLER: request handling produced an error"
         $response.StatusCode = 500
-        if ($JSONErrorMode) {
+        if ($configuration.JSONErrorMode) {
             $response_data = @{
                 message       = $_.Exception.Message
                 params        = $params
@@ -489,18 +498,25 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
 
     # Write a logfile entry in Common Log Format
     $ip = $request.RemoteEndPoint.Address.IPAddressToString
-    $log_writer.WriteLine("$ip - - [$(get-date -format o)] `"$($request.HttpMethod) $($request.Url) HTTP/$($request.ProtocolVersion)`" $($response.StatusCode) $($buffer.Length)")
-    $log_writer.Flush()
+    $message = "$ip - - [$(get-date -format o)] `"$($request.HttpMethod) $($request.Url) HTTP/$($request.ProtocolVersion)`" $($response.StatusCode) $($buffer.Length)"
+    RSLog $message
+    $configuration.log_writer.WriteLine($message)
+    $configuration.log_writer.Flush()
     $response.Dispose()
 }
 
 
 function RSDebug ($message) {
-    if ($host_proxy) {
-        $host_proxy.UI.WriteDebugLine($message)
+    if ($configuration.ShowDebug) {
+        $configuration.HostProxy.UI.WriteDebugLine($message)
     }
 }
 
+function RSLog ($message) {
+    if ($configuration.LogToConsole) {
+        $configuration.HostProxy.UI.WriteLine($message)
+    }
+}
 
 # This lucky function owes it's existence solely to the fact that Test-Json is broken
 function IsJson ($InputObject) {
@@ -766,7 +782,7 @@ function Unpublish-Command {
     foreach ($c in $Commands) {
         $c.Listener.Close()
         $c.RunspacePool.Close()
-        $c.LogFile.Close()
+        $c.Configuration.LogWriter.Close()
         $listener_table.Remove($c)
     }
 }
