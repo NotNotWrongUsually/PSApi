@@ -414,7 +414,7 @@ function RequestHandler ($context, $Command, $configuration) {
             $response_data = "<html><head><title>Something bad happened :(</title></head>
                           <body><font face='Courier New'>
                           <h1 style='background-color: #000000; color: #800000'>HTTP 500 - Internal Server Error</h1>
-                          <p><b>Command:</b><br>$Command $(if($global:JSONErrorMode) { 'true' } else { 'false' })</p>
+                          <p><b>Command:</b><br>$Command</p>
                           <p><b>Error message:</b><br>$($_.Exception.Message)</p>
                           <p><b>Parameters:</b><br>$((($params | Out-String)  -replace "`n", "<br>") -replace " ", "&nbsp;")</p>                      
                           <p><b>Category info:</b><br>$((($_.CategoryInfo | Out-String) -replace "`n", "<br>") -replace " ", "&nbsp;")</p>
