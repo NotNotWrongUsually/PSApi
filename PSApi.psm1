@@ -453,11 +453,25 @@ function RequestHandler ($context, $Command, $log_writer, $host_proxy, $JSONErro
         }
     }
 
-    RSDebug "REQUESTHANDLER: writing response"
+    RSDebug "REQUESTHANDLER: begin writing response"
     # Write a response to the request, distinguishing between images and text
     switch ($response_data.GetType().Name) {
         'String' {
-            [byte[]]$buffer = [System.Text.Encoding]::UTF8.GetBytes($response_data)
+            # If the requestor is ok with getting gzipped data back we'll do that
+            if ($null -ne $request.Headers['Accept-Encoding'] -and "gzip" -in $request.Headers.GetValues('Accept-Encoding')) {
+                    RSDebug "REQUESTHANDLER: Content is a string and Accept-Encoding contains gzip. Attempt to compress."
+                    [byte[]]$content_bytes = [System.Text.Encoding]::UTF8.GetBytes($response_data)
+                    $memory_stream = New-Object System.IO.MemoryStream
+                    $zip_stream = New-Object System.IO.Compression.GzipStream -ArgumentList $memory_stream, ([System.IO.Compression.CompressionLevel]::Fastest)
+                    $zip_stream.Write($content_bytes, 0, $content_bytes.Length)
+                    $zip_stream.dispose()
+                    $memory_stream.dispose()
+                    $response.AddHeader('Content-Encoding', 'gzip')
+                    [byte[]]$buffer = $memory_stream.ToArray()
+            }
+            else {
+                [byte[]]$buffer = [System.Text.Encoding]::UTF8.GetBytes($response_data)
+            }
         }
         'Bitmap' {
             $memory_stream = New-Object System.IO.MemoryStream
