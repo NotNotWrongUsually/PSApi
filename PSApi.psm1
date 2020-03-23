@@ -322,7 +322,7 @@ function RequestHandler ($context, $Command, $configuration) {
 
     # Set the specified CORS policy if any and relevant
     if ($null -ne $request.Headers['Origin'] -and $configuration.CorsPolicy) {
-        $CorsPolicy.GetEnumerator() | ForEach-Object {
+        $configuration.CorsPolicy.GetEnumerator() | ForEach-Object {
             $response.Headers.Add($_.Key, $_.Value)
         }
 
