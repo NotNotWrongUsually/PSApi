@@ -42,6 +42,10 @@ RETURN TYPES
     content-type will be set to application/json. The Test-Json cmdlet is not
     used for this as it appears utterly broken from testing.
 
+    [PSApiServerSentEvent]
+    Custom object type used by the module for Server-Sent Events. Will be sent
+    as text/event-stream.
+
     [Everything else]
     Anything that is not one of the above types will be stringified with the
     Out-String cmdlet and set to a content-type of text/plain. Notably this

@@ -1,8 +1,8 @@
 #Requires -Version 6
 
-Set-Alias -Name 'pcm' -Value 'Publish-Command'
-Set-Alias -Name 'upcm' -Value 'Unpublish-Command'
-Set-Alias -Name 'gpcm' -Value 'Get-PublishedCommand'
+Set-Alias -Name "pcm" -Value "Publish-Command"
+Set-Alias -Name "upcm" -Value "Unpublish-Command"
+Set-Alias -Name "gpcm" -Value "Get-PublishedCommand"
 
 $listener_table = [System.Collections.ArrayList]::new()
 $task_list = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
@@ -20,7 +20,7 @@ function Publish-Command {
     Specifies the command to make available.
     
     .PARAMETER Hostname
-    Specifies the hostname which will serve the requests. Defaults to '+'
+    Specifies the hostname which will serve the requests. Defaults to "+"
     
     .PARAMETER Port
     Specifies the port the HttpListener will listen on.
@@ -51,6 +51,9 @@ function Publish-Command {
 
     .PARAMETER CorsPolicy
     Specifies the CORS policy for the published command. This is only needed if you want a webpage served from another host or port to retrieve results from your published command. Use New-PSApiCorsPolicy to generate a value for this parameter.
+
+    .PARAMETER Streaming
+    Indicates that requests should be processed in chunks. Each output from the pipeline will be sent as a separate response.
     
     .EXAMPLE
     Publish-Command MyFunction
@@ -82,53 +85,56 @@ function Publish-Command {
 
     .EXAMPLE
     # I just want CORS to go away
-    PS > $cors_policy = New-PSApiCorsPolicy -Allow-Origin '*'
+    PS > $cors_policy = New-PSApiCorsPolicy -Allow-Origin "*"
     PS > Publish-Command My-Command -CorsPolicy $cors_policy
     #>
 
 
     
-    [CmdletBinding(DefaultParameterSetName = 'Publish')]
+    [CmdletBinding(DefaultParameterSetName = "Publish")]
     param (
-        [Parameter(Mandatory = $true, ParameterSetName = 'Publish', Position = 0)]
-        [Parameter(Mandatory = $true, ParameterSetName = 'AddUrlAcl', Position = 0)]
+        [Parameter(Mandatory = $true, ParameterSetName = "Publish", Position = 0)]
+        [Parameter(Mandatory = $true, ParameterSetName = "AddUrlAcl", Position = 0)]
         [string]
         $Command,
-        [Parameter(ParameterSetName = 'Publish')]
-        [Parameter(ParameterSetName = 'AddUrlAcl')]
+        [Parameter(ParameterSetName = "Publish")]
+        [Parameter(ParameterSetName = "AddUrlAcl")]
         [string]
-        $Hostname = '+',
-        [Parameter(ParameterSetName = 'Publish')]
-        [Parameter(ParameterSetName = 'AddUrlAcl')]
+        $Hostname = "+",
+        [Parameter(ParameterSetName = "Publish")]
+        [Parameter(ParameterSetName = "AddUrlAcl")]
         [int]
         $Port = 80,
-        [Parameter(ParameterSetName = 'Publish')]
-        [Parameter(ParameterSetName = 'AddUrlAcl')]
+        [Parameter(ParameterSetName = "Publish")]
+        [Parameter(ParameterSetName = "AddUrlAcl")]
         [string]
         $Path = "PSApi",
-        [Parameter(ParameterSetName = 'Publish')]
-        [ValidateScript( { if ($_ -gt 2) {$true} else { Throw "At least 2 threads are required for the server to run properly!" } })][int]$NumberOfThreads = 5,
-        [Parameter(ParameterSetName = 'Publish')]
+        [Parameter(ParameterSetName = "Publish")]
+        [ValidateScript( { if ($_ -gt 2) { $true } else { Throw "At least 2 threads are required for the server to run properly!" } })][int]$NumberOfThreads = 5,
+        [Parameter(ParameterSetName = "Publish")]
         [string]
         $LogLocation = (Join-Path -Path (get-location).path -ChildPath "$Command`_access.log"),
-        [Parameter(ParameterSetName = 'Publish')]
+        [Parameter(ParameterSetName = "Publish")]
         [switch]
         $Force = $false,
-        [Parameter(ParameterSetName = 'Publish')]
+        [Parameter(ParameterSetName = "Publish")]
         [switch]
         $ShowDebugMessages,
-        [Parameter(Mandatory = $true, ParameterSetName = 'AddUrlAcl')]
+        [Parameter(Mandatory = $true, ParameterSetName = "AddUrlAcl")]
         [switch]
         $AddUrlAcl,
-        [Parameter(ParameterSetName = 'Publish')]
+        [Parameter(ParameterSetName = "Publish")]
         [switch]
         $JSONErrorMode,
-        [Parameter(ParameterSetName = 'Publish')]
+        [Parameter(ParameterSetName = "Publish")]
         [PSCustomObject]
         $CorsPolicy,
-        [Parameter(ParameterSetName = 'Publish')]
+        [Parameter(ParameterSetName = "Publish")]
         [switch]
-        $ShowLogMessages
+        $ShowLogMessages,
+        [Parameter(ParameterSetName = "Publish")]
+        [switch]
+        $Streaming = $false
     )
 
     if (-not (Get-Command $Command -ErrorAction "SilentlyContinue")) {
@@ -137,10 +143,10 @@ function Publish-Command {
     }
 
     if ($Path -ne "") {
-        $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Path + '/' + $Command + '/'
+        $prefix_string = "http://" + $Hostname + ":" + $Port + "/" + $Path + "/" + $Command + "/"
     }
     else {
-        $prefix_string = 'http://' + $Hostname + ':' + $Port + '/' + $Command + '/'
+        $prefix_string = "http://" + $Hostname + ":" + $Port + "/" + $Command + "/"
     }
     
     $got_root = IsInSuperuserRole
@@ -206,6 +212,7 @@ function Publish-Command {
 
     # log_writer is used from inside runspaces, so needs to be thread-safe
     $log_writer = [System.IO.TextWriter]::Synchronized((New-Object System.IO.StreamWriter -ArgumentList $LogLocation, $true))
+    
     $dependencies = @(Resolve-CommandDependencies $Command)
 
     # This module itself contains the handling functions, so will always be needed
@@ -216,6 +223,7 @@ function Publish-Command {
 
     $runspacepool = $dependencies | New-CustomRunspacePool -MaximumThreads $NumberOfThreads
 
+    # Need a reference to the host console if we are to put messages into it
     if ($ShowDebugMessages -or $ShowLogMessages) {
         $host_proxy = $Host
     }
@@ -231,24 +239,32 @@ function Publish-Command {
         LogToConsole  = $ShowLogMessages
         CorsPolicy    = $CorsPolicy
         HostProxy     = $host_proxy
+        Streaming     = $Streaming
     }
+
+    # Generate a token so we can cancel the requestrouter cleanly when unpublishing
+    $token_source = [System.Threading.CancellationTokenSource]::new()
+    $cancellation_token = $token_source.Token
 
     # Add information to a table in the script scope to aid in making other functions for starting/stopping it, etc.
     [void]$script:listener_table.add([PSCustomObject]@{
-            Command       = $Command
-            Prefix        = $prefix_string
-            Listener      = $listener
-            RunspacePool  = $runspacepool
-            Configuration = $configurations
+            Command                 = $Command
+            Prefix                  = $prefix_string
+            Listener                = $listener
+            RunspacePool            = $runspacepool
+            Configuration           = $configurations
+            CancellationTokenSource = $token_source
         })
     
     # Start the RequestRouter in a separate runspace.
     $params = @{
-        listener      = $listener
-        RunspacePool  = $runspacepool
-        task_list     = $task_list
-        Configuration = $configurations
+        listener           = $listener
+        RunspacePool       = $runspacepool
+        task_list          = $task_list
+        Configuration      = $configurations
+        cancellation_token = $cancellation_token
     }
+
     $router_runspace = [powershell]::create()
     $router_runspace.RunspacePool = $runspacepool
     [void]$router_runspace.AddCommand("RequestRouter").AddParameters($params)
@@ -257,7 +273,7 @@ function Publish-Command {
 }
 
 
-function RequestRouter ($listener, $runspacepool, $task_list, $configuration) {
+function RequestRouter ($listener, $runspacepool, $task_list, $configuration, $cancellation_token) {
 
     RSDebug "REQUESTROUTER: Starting RequestRouter"
 
@@ -273,242 +289,92 @@ function RequestRouter ($listener, $runspacepool, $task_list, $configuration) {
 
         # A bug causes PowerShell to hang when exiting if a blocking command is running in a runspace.
         # This should ideally be as simple as: $context = $incoming.GetAwaiter().GetResult()
-        while (-not $finished) {
-            $finished = $incoming.Wait(3000)
+        while (-not $finished -and -not ($cancellation_token.IsCancellationRequested)) {
+            $finished = $incoming.Wait(3000, $cancellation_token)
         }
-        $context = $incoming.Result
+        
+        if ($null -ne $incoming.Result) {
+            $context = $incoming.Result
 
-        RSDebug "REQUESTROUTER: Incoming request received. Handing it over to RequestHandler"
-        # Send this request off for handling in a separate runspace.
-        $params = @{
-            Context       = $context
-            Command       = $Command
-            Configuration = $configuration
+            RSDebug "REQUESTROUTER: Incoming request received. Handing it over to RequestHandler"
+            # Send this request off for handling in a separate runspace.
+            $params = @{
+                Context       = $context
+                Command       = $Command
+                Configuration = $configuration
+            }
+    
+            $handler_runspace = [powershell]::create() 
+            $handler_runspace.RunspacePool = $runspacepool
+            [void]$handler_runspace.AddCommand("RequestHandler").AddParameters($params)
+            $handle = $handler_runspace.InvokeAsync()
+            [void]$task_list.Add([PSCustomObject]@{runspace = $handler_runspace; handle = $handle; thread = [System.Threading.Thread]::CurrentThread; request = $context.Request.RawUrl })
         }
-
-        $handler_runspace = [powershell]::create() 
-        $handler_runspace.RunspacePool = $runspacepool
-        [void]$handler_runspace.AddCommand("RequestHandler").AddParameters($params)
-        $handle = $handler_runspace.InvokeAsync()
-        [void]$task_list.Add([PSCustomObject]@{runspace = $handler_runspace; handle = $handle; thread = [System.Threading.Thread]::CurrentThread })
+       
         RemoveCompletedTasks
     }
 }
 
-
-function GetTaskList {
+function Get-PSApiTaskList {
     $task_list
 }
 
-
 function RemoveCompletedTasks {
-    $completed_tasks = GetTaskList | Where-Object { $_.handle.Status -eq "RanToCompletion" }
+    $completed_tasks = Get-PSApiTaskList | Where-Object { $_.handle.Status -eq "RanToCompletion" }
     
     foreach ($task in $completed_tasks) {
-        $task_list.Remove($task)
+        try {
+            $task_list.Remove($task)
+        }
+        catch [InvalidOperationException] {
+            # Someone likely changed the collection while we were removing things. We'll disregard that and remove it next time.
+        }
     }
 }
 
 
 # The RequestHandler is what does the actual work to evaluate the request and provide the users with a response
 function RequestHandler ($context, $Command, $configuration) {
-    
-    # $DebugPreference = $RunSpaceDebugPreference   Is this just a leftover?
-    RSDebug "REQUESTHANDLER: starting handling of incoming request"
-
     $request = $context.Request
     $response = $context.Response
-    RSDebug "REQUESTHANDLER: requested url is $($request.RawUrl)"
+    $http_method = $request.HttpMethod
 
-    # Set the specified CORS policy if any and relevant
-    if ($null -ne $request.Headers['Origin'] -and $configuration.CorsPolicy) {
-        $configuration.CorsPolicy.GetEnumerator() | ForEach-Object {
-            $response.Headers.Add($_.Key, $_.Value)
-        }
+    RSDebug "REQUESTHANDLER: starting handling of incoming request: $($request.RawUrl)"
+    RSDebug "REQUESTHANDLER: request method is $http_method"    
 
-        if ($configuration.CorsPolicy['Access-Control-Allow-Origin'] -ne '*' -and $configuration.CorsPolicy['Access-Control-Allow-Origin'] -ne 'null') {
-            if ($request.Headers['Origin'] -in $configuration.CorsPolicy['Access-Control-Allow-Origin'].Replace(' ', '').Split(',')) {
-                $response.Headers.Add('Vary', 'Origin')
-                $response.Headers.Set('Access-Control-Allow-Origin', $request.Headers['Origin'])
-            }
-            else {
-                $response.Headers.Remove('Access-Control-Allow-Origin')
-            }
-        }
-    }
-
-    $params = @{ }
-
-    if ($request.HttpMethod -eq "GET") {
-        # The querystring is supplied as a NameValueCollection. We'll need to convert this to a hashtable for easy
-        # splatting with the call operator.
-        $request.QueryString.Keys | ForEach-Object {
-            $value = $request.QueryString.GetValues($_)
-            # Prevent a one-object array being passed on. Functions which do not take arrays are not happy about this.
-            if ($value.count -eq 1) {
-                $value = $value[0]
-            }
-            # This is to handle switch parameters. This feels a bit wrong. Are there actual cases where an empty string
-            # would be passed explicitly as a parameter? Assuming no, for now.
-            if ($value -eq "" -and $value.count -eq 1) {
-                $value = $true
-            }
-            $params.Add($_, $value)
-        }
-    }
-    elseif ($request.HttpMethod -eq "POST") {
-        $reader = New-Object System.IO.StreamReader -ArgumentList $request.InputStream, $request.ContentEncoding
-        $post_data = $reader.ReadToEnd()
-        # The parameters can arrive either as a JSON payload, or URL encoded
-        if (IsJson $post_data) {
-            $params_object = $post_data | ConvertFrom-Json
-            $params_object.psobject.properties | ForEach-Object {
-                $params.add($_.Name, $_.Value)
-            }
-        }
-        else {
-            $parameter_list = $post_data -split '&'
-            $parameter_list | ForEach-Object {
-                $name, $value = $_ -split '='
-                $name = [System.Web.HttpUtility]::UrlDecode($name)
-                $value = [System.Web.HttpUtility]::UrlDecode($value)
-                if ($value) {
-                    $params.Add($name, $value)
-                }
-            }
-        }
-        $reader.Dispose()
-    }
-    elseif ($request.HttpMethod -eq 'OPTIONS') {
-        $response.Headers.Add('Allow', 'GET, POST, OPTIONS')
-        $response_data = ''
-        $skip_processing = $true
-    }
-    else {
-        # Someone is trying to do a request with a method apart from GET, POST or OPTIONS.
-        $response.StatusCode = 405
-        $response.Headers.Add('Allow', 'GET, POST, OPTIONS')
-        $response_data = "HTTP 405 - Method Not Allowed"
-        $skip_processing = $true
-    }
-
-    # Try to run the users command
-    # For now error 500 is what will be thrown if the code encounters _any_ error
-    try {
-        if (-not $skip_processing) {
-            $response_data = & $Command @params -ErrorAction 'stop'
-        }
-    }
-    catch {
-        RSDebug "REQUESTHANDLER: request handling produced an error"
-        $response.StatusCode = 500
-        if ($configuration.JSONErrorMode) {
-            $response_data = @{
-                message       = $_.Exception.Message
-                params        = $params
-                category_info = $_.CategoryInfo
-                command       = $Command
-            } | ConvertTo-JSON
-        }
-        else {
-            $response_data = "<html><head><title>Something bad happened :(</title></head>
-                          <body><font face='Courier New'>
-                          <h1 style='background-color: #000000; color: #800000'>HTTP 500 - Internal Server Error</h1>
-                          <p><b>Command:</b><br>$Command</p>
-                          <p><b>Error message:</b><br>$($_.Exception.Message)</p>
-                          <p><b>Parameters:</b><br>$((($params | Out-String)  -replace "`n", "<br>") -replace " ", "&nbsp;")</p>                      
-                          <p><b>Category info:</b><br>$((($_.CategoryInfo | Out-String) -replace "`n", "<br>") -replace " ", "&nbsp;")</p>
-                          </font></body>
-                          </html>"
-        }
-    }
+    if ($null -ne $configuration.CorsPolicy) {
+        RSDebug "REQUESTHANDLER: Setting CORS headers"
+        SetCorsHeaders
+    } 
     
-    # Next section is special handling to try and do proper return types
-    RSDebug "REQUESTHANDLER: starting inspection of content"
-    switch ($response_data.GetType().Name) {
-        'String' {
-            if (IsJson $response_data) {
-                RSDebug "REQUESTHANDLER: content determined to be JSON"
-                $response.ContentType = "application/json;charset=utf-8"
-                $response.ContentEncoding = [System.Text.Encoding]::UTF8
-            }
-            else {
-                RSDebug "REQUESTHANDLER: content determined to be [string], will show as html"
-                $response.ContentType = "text/html"
-                $response.ContentEncoding = [System.Text.Encoding]::UTF8
-            }
+    switch ($http_method) {
+        { $_ -in "GET", "POST" } {
+            $response.StatusCode = 200
+            $params = GetRequestParameters
+            RunPublishedCommand $params | CustomizeResponse | SendResponse
+            break
         }
-        'XmlDocument' {
-            RSDebug "REQUESTHANDLER: content determined to be XML"
-            $response_data = $response_data.OuterXml
-            $response.ContentType = "text/xml;charset=utf-8"
-            $response.ContentEncoding = [System.Text.Encoding]::UTF8
+        "OPTIONS" {
+            $response.StatusCode = 200
+            $response.Headers.Add("Allow", "GET, POST, OPTIONS")
+            $response_data = ""
+            $response_data | SendResponse
+            break
         }
-        'Bitmap' {
-            RSDebug "REQUESTHANDLER: content determined to be an image"
-            $response.ContentType = "image/png"
-        }
-        'BasicHtmlWebResponseObject' {
-            RSDebug "REQUESTHANDLER: content determined to be html"
-            $response.ContentType = "text/html;charset=utf-8"
-            $response.ContentEncoding = [System.Text.Encoding]::UTF8
-            $response_data = $response_data.Content
-        }
+
         Default {
-            RSDebug "REQUESTHANDLER: could not determine content type. Stringifying and outputting."
-            $response.ContentType = "text/plain;charset=utf-8"
-            $response.ContentEncoding = [System.Text.Encoding]::UTF8
-            $response_data = $response_data | Out-String 
+            $response.StatusCode = 405
+            $response.Headers.Add("Allow", "GET, POST, OPTIONS")
+            $response_data = "HTTP 405 - Method Not Allowed"
+            $response_data | SendResponse
         }
     }
-
-    RSDebug "REQUESTHANDLER: begin writing response"
-    # Write a response to the request, distinguishing between images and text
-    switch ($response_data.GetType().Name) {
-        'String' {
-            # If the requestor is ok with getting gzipped data back we'll do that
-            if ($null -ne $request.Headers['Accept-Encoding'] -and "gzip" -in $request.Headers.GetValues('Accept-Encoding')) {
-                    RSDebug "REQUESTHANDLER: Content is a string and Accept-Encoding contains gzip. Attempt to compress."
-                    [byte[]]$content_bytes = [System.Text.Encoding]::UTF8.GetBytes($response_data)
-                    $memory_stream = New-Object System.IO.MemoryStream
-                    $zip_stream = New-Object System.IO.Compression.GzipStream -ArgumentList $memory_stream, ([System.IO.Compression.CompressionLevel]::Fastest)
-                    $zip_stream.Write($content_bytes, 0, $content_bytes.Length)
-                    $zip_stream.dispose()
-                    $memory_stream.dispose()
-                    $response.AddHeader('Content-Encoding', 'gzip')
-                    [byte[]]$buffer = $memory_stream.ToArray()
-            }
-            else {
-                [byte[]]$buffer = [System.Text.Encoding]::UTF8.GetBytes($response_data)
-            }
-        }
-        'Bitmap' {
-            $memory_stream = New-Object System.IO.MemoryStream
-            $response_data.Save($memory_stream, [System.Drawing.Imaging.ImageFormat]::Png)
-            [byte[]]$buffer = $memory_stream.GetBuffer()
-            $memory_stream.Dispose()
-            $response_data.Dispose()
-        }
-    }
-
-    $response.ContentLength64 = $buffer.length
-    $response.OutputStream.Write($buffer, 0, $buffer.length)
-    $response.OutputStream.Close()
-    RSDebug "REQUESTHANDLER: response sent"
-
-    # Write a logfile entry in Common Log Format
-    $ip = $request.RemoteEndPoint.Address.IPAddressToString
-    $message = "$ip - - [$(get-date -format o)] `"$($request.HttpMethod) $($request.Url) HTTP/$($request.ProtocolVersion)`" $($response.StatusCode) $($buffer.Length)"
-    RSLog $message
-    $configuration.log_writer.WriteLine($message)
-    $configuration.log_writer.Flush()
-    $response.Dispose()
 }
-
 
 function RSDebug ($message) {
     if ($configuration.ShowDebug) {
-        $configuration.HostProxy.UI.WriteDebugLine($message)
+        $time_string = get-date -Format "yyyy-MM-dd HH:mm:ss.fff"
+        $configuration.HostProxy.UI.WriteDebugLine($time_string + " " + $message)
     }
 }
 
@@ -518,7 +384,7 @@ function RSLog ($message) {
     }
 }
 
-# This lucky function owes it's existence solely to the fact that Test-Json is broken
+# This lucky function owes its existence solely to the fact that Test-Json is broken
 function IsJson ($InputObject) {
     try {
         $InputObject | ConvertFrom-Json -ErrorAction Stop | Out-Null
@@ -528,7 +394,6 @@ function IsJson ($InputObject) {
         $false
     }
 }
-
 
 function Resolve-CommandDependencies {
     [CmdletBinding()]
@@ -570,10 +435,10 @@ function InspectCommand ($name, $from_module = $null) {
     if (-not $skip_processing) {
         [void]$seen.Add($identifier)
 
-        # '?' specifically screws up by acting some-what like a wildcard, even if wildcards don't work in
-        # 'get-command'
-        if ($name -eq '?') {
-            $check_command = get-alias | Where-Object { $_.Name -eq '?' }
+        # "?" specifically screws up by acting some-what like a wildcard, even if wildcards don't work in
+        # "get-command"
+        if ($name -eq "?") {
+            $check_command = get-alias | Where-Object { $_.Name -eq "?" }
         }
         else {
             try {
@@ -585,7 +450,7 @@ function InspectCommand ($name, $from_module = $null) {
                 try {
                     # Nope ... then try finding it in the global scope
                     $check_command = $global_scope.Invoke( { param([string]$name); get-command $name }, $name)
-                    #$check_command = Get-Command $name -ErrorAction 'Stop'
+                    #$check_command = Get-Command $name -ErrorAction "Stop"
                     Write-Debug "$name retrieved from global scope"       
                 }
                 catch { 
@@ -606,31 +471,31 @@ function InspectCommand ($name, $from_module = $null) {
     
         switch ($check_command.CommandType) {
         
-            'Cmdlet' {
+            "Cmdlet" {
                 # Snapins and modules have to be loaded differently in runspaces. Cmdlets can be either.
                 if ($check_command.PSSnapIn) {
-                    WriteEntry 'PSSnapIn' $check_command.Source
+                    WriteEntry "PSSnapIn" $check_command.Source
                 }
                 else {
-                    WriteEntry 'Module' $check_command.Source
+                    WriteEntry "Module" $check_command.Source
                 }
                 break
             }
 
-            'Function' {
-                if ($check_command.CommandType -eq 'Function' -and $check_command.Source) {
-                    WriteEntry 'Module' $check_command.Source
+            "Function" {
+                if ($check_command.CommandType -eq "Function" -and $check_command.Source) {
+                    WriteEntry "Module" $check_command.Source
                 }
                 else {
-                    WriteEntry 'Function' $check_command.Name
+                    WriteEntry "Function" $check_command.Name
                 }
                 break
             }
 
-            'Alias' {
+            "Alias" {
                 # Aliases need  some special attention. We will both have to include the alias itself, but also any
                 # command it references.
-                WriteEntry 'Alias' $check_command.Name
+                WriteEntry "Alias" $check_command.Name
                 InspectCommand -name $check_command.ReferencedCommand -from_module $check_command.Source
                 break
             }
@@ -644,28 +509,28 @@ function InspectCommand ($name, $from_module = $null) {
     
             # Some variables could be needed. A variable is considered a dependency if it is found within a
             # function and has a non-null value in the current session.
-            $variables_to_transfer = $tokenized | Where-Object type -eq 'Variable' | Select-Object -ExpandProperty Content -unique
+            $variables_to_transfer = $tokenized | Where-Object type -eq "Variable" | Select-Object -ExpandProperty Content -unique
     
             # This list is straight from about_Automatic_Variables. We don't want to transfer these.
-            $variable_blacklist = 'true', 'false', 'null', '_', '$', '?', '^', 'AllNodes', 'Args',
-            'ConsoleFileName', 'Error', 'Event', 'EventArgs', 'EventSubscriber', 'ExecutionContext', 'ForEach',
-            'Home', 'Host', 'Input', 'LastExitCode', 'Matches', 'MyInvocation', 'NestedPromptLevel', 'OFS', 'PID',
-            'Profile', 'PSBoundParameters', 'PsCmdlet', 'PSCommandPath', 'PsCulture', 'PSScriptRoot',
-            'PSSenderInfo', 'PsUICulture', 'PsVersionTable', 'Pwd', 'Sender', 'ReportErrorShowExceptionClass',
-            'ReportErrorShowInnerException', 'ReportErrorShowSource', 'ReportErrorShowStackTrace', 'ShellID',
-            'StackTrace', 'This'
+            $variable_blacklist = "true", "false", "null", "_", "$", "?", "^", "AllNodes", "Args",
+            "ConsoleFileName", "Error", "Event", "EventArgs", "EventSubscriber", "ExecutionContext", "ForEach",
+            "Home", "Host", "Input", "LastExitCode", "Matches", "MyInvocation", "NestedPromptLevel", "OFS", "PID",
+            "Profile", "PSBoundParameters", "PsCmdlet", "PSCommandPath", "PsCulture", "PSScriptRoot",
+            "PSSenderInfo", "PsUICulture", "PsVersionTable", "Pwd", "Sender", "ReportErrorShowExceptionClass",
+            "ReportErrorShowInnerException", "ReportErrorShowSource", "ReportErrorShowStackTrace", "ShellID",
+            "StackTrace", "This"
     
             foreach ($var_name in $variables_to_transfer) {
                 Write-Debug "Looking for variable $var_name in global scope"
                 try {
-                    $var = Get-Variable -Name $var_name -Scope 'Global' -ErrorAction 'Stop'
+                    $var = Get-Variable -Name $var_name -Scope "Global" -ErrorAction "Stop"
                     $var = $true
                 }
                 catch {
                     $var = $false
                 }
                 if ($var -and $var_name -notin $variable_blacklist -and -not $check_command.Source) {
-                    WriteEntry 'Variable' $var_name
+                    WriteEntry "Variable" $var_name
                 }
             }
     
@@ -702,7 +567,7 @@ function New-CustomRunspacePool {
     )
 
     begin {
-        Write-Debug 'Starting custom runspace pool creation'
+        Write-Debug "Starting custom runspace pool creation"
 
         # This loads in the powershell Microsoft.PowerShell.Core only. Ideally this would only happen if it was in
         # required_entities, but it is needed since it seems impossible to load it in later (ImportPSSnapIn says it
@@ -712,7 +577,7 @@ function New-CustomRunspacePool {
     }
 
     process {
-        $required_entities | Where-Object Type -eq 'Module' | ForEach-Object {
+        $required_entities | Where-Object Type -eq "Module" | ForEach-Object {
             if ($_.Name -notin $session_state.Module.Name) {
                 Write-Debug "Adding module: $($_.Name)"
                 $module_path = Get-Module $_.Name | Select-Object -ExpandProperty Path
@@ -720,14 +585,14 @@ function New-CustomRunspacePool {
             }
         }
 
-        $required_entities | Where-Object Type -eq 'PSSnapIn' | ForEach-Object {
+        $required_entities | Where-Object Type -eq "PSSnapIn" | ForEach-Object {
             if ($_.Name -notin $session_state.commands.PSSnapIn.Name) {
                 Write-Debug "Adding PSSnapIn: $($_.Name)"
                 $session_state.ImportPSSnapIn($_.Name, [ref]$null)
             }
         }
 
-        $required_entities | Where-Object Type -eq 'Function' | ForEach-Object {
+        $required_entities | Where-Object Type -eq "Function" | ForEach-Object {
             if ($_.Name -notin $session_state.commands.Name) {
                 Write-Debug "Adding Function: $($_.Name)"
                 $Command = Get-Command $_.Name
@@ -735,7 +600,7 @@ function New-CustomRunspacePool {
             }
         }
 
-        $required_entities | Where-Object Type -eq 'Variable' | ForEach-Object {
+        $required_entities | Where-Object Type -eq "Variable" | ForEach-Object {
             if ($_.Name -notin $session_state.Variables.Name) {
                 Write-Debug "Adding Variable: $($_.Name)"
                 $variable = Get-Variable $_.Name
@@ -743,7 +608,7 @@ function New-CustomRunspacePool {
             }
         }
 
-        $required_entities | Where-Object Type -eq 'Alias' | ForEach-Object {
+        $required_entities | Where-Object Type -eq "Alias" | ForEach-Object {
             if ($_.Name -notin $session_state.commands.Name) {
                 Write-Debug "Adding Alias: $($_.Name)"
                 $alias = Get-Alias $_.Name
@@ -765,7 +630,7 @@ function New-CustomRunspacePool {
 function Get-PublishedCommand {
     [CmdletBinding()]
     param (
-        [string]$Command = '*'
+        [string]$Command = "*"
     )
 
     $listener_table | Where-Object { $_.command -like $Command }
@@ -774,15 +639,26 @@ function Get-PublishedCommand {
 function Unpublish-Command {
     [CmdletBinding()]
     param (
-        [string]$Command = '*'
+        [string]$Command = "*"
     )
     
     $Commands = Get-PublishedCommand -Command $Command
 
     foreach ($c in $Commands) {
-        $c.Listener.Close()
+        Write-Debug "Advertising cancellation"
+        $c.CancellationTokenSource.Cancel()
+        start-sleep -Milliseconds 100
+        Write-Debug "Stopping listener"
+        $c.Listener.Stop()
+        start-sleep -Milliseconds 100
+        Write-Debug "Closing runspace"
         $c.RunspacePool.Close()
+        Write-Debug "Closing listener"
+        $c.Listener.Close()
+        Write-Debug "Closing log"
         $c.Configuration.LogWriter.Close()
+        Write-Debug "Removing completed tasks"
+        RemoveCompletedTasks
         $listener_table.Remove($c)
     }
 }
@@ -832,7 +708,7 @@ function Remove-PSApiUrlAclReservation ($prefix_string) {
 }
 
 
-# Get prefixes this cmdlet has added
+# Get prefixes added by this module
 function Get-PSApiUrlAclReservation {
     <#
     .DESCRIPTION
@@ -844,7 +720,9 @@ function Get-PSApiUrlAclReservation {
     
     if ($IsWindows) {
         $storage_path = join-path (split-path (Get-Command publish-command).Module.Path) -ChildPath "Persist" -AdditionalChildPath "urlacls.txt"
-        Get-Content -Path $storage_path
+        if (Test-Path $storage_path) {
+            Get-Content -Path $storage_path
+        }
     }
     else {
         Write-Warning "Only supported on Windows!"
@@ -895,7 +773,12 @@ function New-PSApiCorsPolicy {
     
     .EXAMPLE
     # I just want CORS to go away
-    PS > $cors_policy = New-PSApiCorsPolicy -Allow-Origin '*'
+    PS > $cors_policy = New-PSApiCorsPolicy -Allow-Origin "*"
+    PS > Publish-Command My-Command -CorsPolicy $cors_policy
+
+    .EXAMPLE
+    # Allow posting of JSON to published command, as the content-type "application/json"
+    PS > $cors_policy = New-PSApiCorsPolicy -Allow-Origin "*" -Allow-Methods "POST" -Allow-Headers "content-type"
     PS > Publish-Command My-Command -CorsPolicy $cors_policy
     
     .NOTES
@@ -919,7 +802,377 @@ function New-PSApiCorsPolicy {
         else {
             $val = $_.Value[0]
         }
-        $output['Access-Control-' + $_.Key] = $val
+        $output["Access-Control-" + $_.Key] = $val
     }
     $output
+}
+
+function SetCorsHeaders {
+    $CorsPolicy = $configuration.CorsPolicy
+    if ($null -ne $request.Headers["Origin"]) {
+        $CorsPolicy.GetEnumerator() | ForEach-Object {
+            $response.Headers.Add($_.Key, $_.Value)
+        }
+
+        if ($CorsPolicy["Access-Control-Allow-Origin"] -ne "*" -and $CorsPolicy["Access-Control-Allow-Origin"] -ne "null") {
+            if ($request.Headers["Origin"] -in $CorsPolicy["Access-Control-Allow-Origin"].Replace(" ", "").Split(",")) {
+                $response.Headers.Add("Vary", "Origin")
+                $response.Headers.Set("Access-Control-Allow-Origin", $request.Headers["Origin"])
+            }
+            else {
+                $response.Headers.Remove("Access-Control-Allow-Origin")
+            }
+        }
+    }
+}
+
+function GetRequestParameters {
+    RSDebug "Begin: extract parameters from request"
+    
+    $params = @{ }
+
+    if ($request.HttpMethod -eq "GET") {
+        # The querystring is supplied as a NameValueCollection. We'll need to convert this to a hashtable for easy
+        # splatting with the call operator.
+        $request.QueryString.Keys | ForEach-Object {
+            $value = $request.QueryString.GetValues($_)
+            # Prevent a one-object array being passed on. Functions which do not take arrays are not happy about this.
+            if ($value.count -eq 1) {
+                $value = $value[0]
+            }
+            # This is to handle switch parameters. This feels a bit wrong. Are there actual cases where an empty string
+            # would be passed explicitly as a parameter? Assuming no, for now.
+            if ($value -eq "" -and $value.count -eq 1) {
+                $value = $true
+            }
+            $params.Add($_, $value)
+        }
+    }
+    elseif ($request.HttpMethod -eq "POST") {
+        $reader = New-Object System.IO.StreamReader -ArgumentList $request.InputStream, $request.ContentEncoding
+        $post_data = $reader.ReadToEnd()
+        # The parameters can arrive either as a JSON payload, or URL encoded
+        if (IsJson $post_data) {
+            $params_object = $post_data | ConvertFrom-Json
+            $params_object.psobject.properties | ForEach-Object {
+                $params.add($_.Name, $_.Value)
+            }
+        }
+        else {
+            $parameter_list = $post_data -split "&"
+            $parameter_list | ForEach-Object {
+                $name, $value = $_ -split "="
+                $name = [System.Web.HttpUtility]::UrlDecode($name)
+                $value = [System.Web.HttpUtility]::UrlDecode($value)
+                # Handle switch parameter
+                if ($value -eq "") {
+                    $value = $true
+                }
+                if ($params.ContainsKey($name)) {
+                    $params[$name] = @($params[$name]) + $value
+                }
+                else {
+                    $params.Add($name, $value)
+                }
+                
+            }
+        }
+        $reader.Dispose()
+    }
+    RSDebug "Finished: extract parameters from request"
+    $params
+}
+
+function RunPublishedCommand {
+    [CmdletBinding()]
+    param (
+        [Parameter()][System.Collections.Hashtable]$params
+    )
+    RSDebug "Begin: run the published command"
+    # For now error 500 is what will be thrown if the code encounters _any_ error. If the pipeline
+    # has been stopped because the connection is closed this will also be thrown, but will obviously
+    # not be sent anywhere.
+    try {
+        if ($configuration.Streaming) {
+            & $Command @params -ErrorAction "stop"
+        }
+        else {
+            , (& $Command @params -ErrorAction "stop")
+        }
+        
+    }
+    catch {
+        RSDebug "REQUESTHANDLER: request handling produced an error"
+        $response.StatusCode = 500
+        if ($configuration.JSONErrorMode) {
+            @{
+                message       = $_.Exception.Message
+                params        = $params
+                category_info = $_.CategoryInfo
+                command       = $Command
+            } | ConvertTo-JSON
+        }
+        else {
+            "<html><head><title>Something bad happened :(</title></head>
+            <body><font face='Courier New'>
+            <h1 style='background-color: #000000; color: #800000'>HTTP 500 - Internal Server Error</h1>
+            <p><b>Command:</b><br>$Command</p>
+            <p><b>Error message:</b><br>$($_.Exception.Message)</p>
+            <p><b>Parameters:</b><br>$((($params | Out-String)  -replace "`n", "<br>") -replace " ", "&nbsp;")</p>                      
+            <p><b>Category info:</b><br>$((($_.CategoryInfo | Out-String) -replace "`n", "<br>") -replace " ", "&nbsp;")</p>
+            </font></body>
+            </html>"
+        }
+    }
+    RSDebug "Finished: run the published command"
+}
+
+function CustomizeResponse {
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline = $true)]$InputObject
+    )
+    begin {
+        RSDebug "Begin: customize content according to type"
+    }
+    process {
+        , $InputObject | ForEach-Object {
+            $output = $_
+            $object_type = $_.GetType().Name
+            switch ($object_type) {
+                "String" {
+                    if (IsJson $output) {
+                        RSDebug "Content determined to be JSON"
+                        $response.ContentType = "application/json;charset=utf-8"
+                        $response.ContentEncoding = [System.Text.Encoding]::UTF8
+                        $output
+                    }
+                    else {
+                        RSDebug "Content determined to be [string], will show as html"
+                        $response.ContentType = "text/html"
+                        $response.ContentEncoding = [System.Text.Encoding]::UTF8
+                        $output
+                    }
+                }
+                "XmlDocument" {
+                    RSDebug "Content determined to be XML"
+                    $response.ContentType = "text/xml;charset=utf-8"
+                    $response.ContentEncoding = [System.Text.Encoding]::UTF8
+                    $output.OuterXml
+                }
+                "Bitmap" {
+                    RSDebug "Content determined to be an image"
+                    $response.ContentType = "image/png"
+                    $output
+                }
+                "BasicHtmlWebResponseObject" {
+                    RSDebug "Content determined to be html"
+                    $response.ContentType = "text/html;charset=utf-8"
+                    $response.ContentEncoding = [System.Text.Encoding]::UTF8
+                    $output.Content
+                }
+                "PSApiServerSentEvent" {
+                    RSDebug "Content determined to be a Server-Sent Event"
+                    $response.ContentType = "text/event-stream"
+                    $response.ContentEncoding = [System.Text.Encoding]::UTF8
+                    $output.ToString()
+                }
+                Default {
+                    RSDebug "Could not determine content type for $($object_type). Stringifying and outputting."
+                    if ($configuration.Streaming) {
+                        $response.ContentType = "text/event-stream;charset=utf-8"
+                    }
+                    else {
+                        $response.ContentType = "text/plain;charset=utf-8"
+                    }
+                    $response.ContentEncoding = [System.Text.Encoding]::UTF8
+                    $output | Out-String 
+                }
+            }
+        }
+    }
+    end {
+        RSDebug "Finished: customize content according to type"
+    }
+}
+
+function SendResponse {
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline = $true)][System.Object[]]$InputObject
+    )
+
+    begin {
+        RSDebug "Begin: write response"
+        if ($configuration.Streaming) {
+            RSDebug "Streaming requested, setting chunked sending."
+            $response.SendChunked = $true
+        }
+    }
+
+    process {
+        $InputObject | ForEach-Object {
+            $response_data = $_
+            $object_type = $response_data.GetType().Name
+            RSDebug "object_type is $object_type"
+            switch ($object_type) {
+                "String" {
+                    # If the requestor is ok with getting gzipped data back we'll do that
+                    if ($null -ne $request.Headers["Accept-Encoding"] -and "gzip" -in $request.Headers.GetValues("Accept-Encoding") -and -not $configuration.Streaming) {
+                        # Need to suss out compression of chunked transmission. Take a look at
+                        # https://stackoverflow.com/questions/5280633/gzip-compression-of-chunked-encoding-response
+                        RSDebug "Content is a string and Accept-Encoding contains gzip. Attempt to compress."
+                        [byte[]]$content_bytes = [System.Text.Encoding]::UTF8.GetBytes($response_data)
+                        $memory_stream = New-Object System.IO.MemoryStream
+                        $zip_stream = New-Object System.IO.Compression.GzipStream -ArgumentList $memory_stream, ([System.IO.Compression.CompressionLevel]::Fastest)
+                        $zip_stream.Write($content_bytes, 0, $content_bytes.Length)
+                        $zip_stream.dispose()
+                        $memory_stream.dispose()
+                        $response.AddHeader("Content-Encoding", "gzip")
+                        [byte[]]$buffer = $memory_stream.ToArray()
+                    }
+                    else {
+                        RSDebug "Content is a string, and compression is not allowed. Outputting as is."
+                        [byte[]]$buffer = [System.Text.Encoding]::UTF8.GetBytes($response_data)
+                        RSDebug "$buffer"
+                    }
+                }
+                "Bitmap" {
+                    RSDebug "Content is a bitmap. Converting to a png bytearray."
+                    $memory_stream = New-Object System.IO.MemoryStream
+                    $response_data.Save($memory_stream, [System.Drawing.Imaging.ImageFormat]::Png)
+                    [byte[]]$buffer = $memory_stream.GetBuffer()
+                    $memory_stream.Dispose()
+                    $response_data.Dispose()
+                }
+            }
+        
+            if (-not $configuration.Streaming) {
+                $response.ContentLength64 = $buffer.length
+            }
+            RSDebug "Writing output stream"
+            try {
+                $response.OutputStream.Write($buffer, 0, $buffer.length)
+                $response.OutputStream.Flush()
+            }
+            catch [system.management.automation.methodinvocationexception] {
+                # This is what is thrown when attempting to write to a connection that is closed
+                # Stopping the pipeline will make sure that we reach the end section of this function
+                # and everything is cleaned up nicely.
+                RSDebug "User no longer wants data. Stopping pipeline."
+                throw [System.Management.Automation.PipelineStoppedException]
+            }
+        }
+    }
+
+    end {
+        RSDebug "Finished: write response"
+        $response.OutputStream.Close()
+        # Write a logfile entry in Common Log Format
+        $ip = $request.RemoteEndPoint.Address.IPAddressToString
+        $message = "$ip - - [$(get-date -format o)] `"$($request.HttpMethod) $($request.Url) HTTP/$($request.ProtocolVersion)`" $($response.StatusCode) $($buffer.Length)"
+        RSLog $message
+        $configuration.LogWriter.WriteLine($message)
+        $configuration.LogWriter.Flush()
+        $response.Dispose()
+    }
+}
+
+class PSApiServerSentEvent {
+    [System.Collections.Generic.List[string]]$Data = @()
+    [string]$Id
+    [string]$Event
+
+    [String] ToString() {
+        $outstring = [System.Text.StringBuilder]::new()
+        foreach ($d in $this.Data) {
+            $outstring.Append("data: " + ($d -replace "`n", "`ndata: ") + "`n")
+        }
+        $outstring.Append("event: " + $this.Event + "`n")
+        $outstring.Append("id: " + $this.Id + "`n`n`n")
+        return $outstring
+    }
+
+    [void] AppendData([string]$newdata) {
+        $this.Data.Add($newdata)
+    }
+}
+
+<#
+.SYNOPSIS
+Converts input to HTML5 specified format for a Server-Sent Event.
+
+.DESCRIPTION
+Any input that is piped to the function will be stringified and reformatted to Server-Sent Event format. Event will be set to "message", which is the default type expected. Id will be set by generating a guid for each event. If full control over output is desired it is necessary to pipe a PSCustomObject with the properties Data, Event, and Id to this function. Note that this function is designed to exclusively take piped input. Each input will become a separate object. Look at example 3 for a method to turn the output of an entire command into just one object.
+
+.PARAMETER Data
+The input that will be converted to SSE format. Objects will be run through "Out-String" before conversion.
+
+.EXAMPLE
+# Retrieves the processlist and converts it to SSE output format. Each process will become its own object.
+Get-Process | ConvertTo-ServerSentEvent
+
+.EXAMPLE
+# Create an object and convert it first to JSON for good interoperability with JavaScript, and then to SSE format to ship if off.
+[PSCustomObject]@{
+    Name = "Alice"
+    Age = "36"
+} | ConvertTo-Json | ConvertTo-ServerSentEvent
+
+.EXAMPLE
+# Turn the full content of a Get-Process command into one SSE output
+,(get-process) | ConvertTo-ServerSentEvent
+
+.EXAMPLE
+# Inspect the output of the SSE object
+$person = [PSCustomObject]@{
+    Name = "Alice"
+    Age = "36"
+} | ConvertTo-Json -Compress | ConvertTo-ServerSentEvent
+
+$person.ToString()
+
+Output:
+data: {"Name":"Alice","Age":"36"}
+event: message
+id: 7a4c51f0-138d-4ca3-8c83-7b01cc15d9a5
+
+.OUTPUTS
+PSApiServerSentEvent[]
+
+.INPUTS
+Accepts any piped input
+
+.NOTES
+While an Id is generated for each event, PSApi does not yet support resuming interrupted connections from a specific Id.
+#>
+function ConvertTo-ServerSentEvent {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)][PSObject]$Data
+    )
+
+    begin { }
+
+    process {
+        $input | ForEach-Object {
+            $out = [PSApiServerSentEvent]::new()
+
+            if ($_.Data -and $_.Event -and $_.Id) {
+                $out.Data = $_.Data
+                $out.Event = $_.Event
+                $out.Id = $_.Id
+            }
+            else {
+                $out.Event = "message"
+                $out.Id = [guid]::NewGuid().guid
+                $Data | Out-String -stream | ForEach-Object {
+                    if ($_) {
+                        $out.AppendData($_)
+                    }
+                }
+            }
+            $out
+        }
+    }
 }
