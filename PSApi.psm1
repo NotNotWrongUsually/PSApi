@@ -774,16 +774,27 @@ function Get-PublishedCommand {
 function Unpublish-Command {
     [CmdletBinding()]
     param (
-        [string]$Command = '*'
+        [Parameter(ValueFromPipelineByPropertyName)]
+        $Command = '*'
     )
-    
-    $Commands = Get-PublishedCommand -Command $Command
 
-    foreach ($c in $Commands) {
-        $c.Listener.Close()
-        $c.RunspacePool.Close()
-        $c.Configuration.LogWriter.Close()
-        $listener_table.Remove($c)
+    Begin {
+        $toBeRemoved = @()
+    }
+    Process {
+        $commands = Get-PublishedCommand -Command $Command
+        foreach ($c in $Commands) {
+            $c.Listener.Close()
+            $c.RunspacePool.Close()
+            $c.Configuration.LogWriter.Close()
+            $toBeRemoved  += $c
+        }
+    }
+    End {
+        # Need to remove all listeners at the end rather than during the process loop
+        # because the output of Get-PublishedCommand is changed if we
+        # edit $listener_table during the loop
+        $toBeRemoved | ForEach-Object {$listener_table.Remove($_)}
     }
 }
 
